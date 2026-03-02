@@ -1,22 +1,29 @@
 import { Actor } from 'apify';
-import { CheerioCrawler } from '@crawlee/cheerio';
-import { ProxyConfiguration, RequestQueue } from '@crawlee/core';
+import { CheerioCrawler, ProxyConfiguration, RequestQueue } from '@crawlee/cheerio';
 
 await Actor.init();
+
+// Get input safely
+const input = await Actor.getInput();
+const startUrls = Array.isArray(input?.startUrls) ? input.startUrls : [];
+
+if (startUrls.length === 0) {
+    console.log('No startUrls provided. Exiting...');
+    await Actor.exit();
+}
 
 // Initialize request queue
 const requestQueue = await RequestQueue.open();
 
-// Example: add start URLs from input
-const { startUrls } = await Actor.getInput();
 for (const urlObj of startUrls) {
-    await requestQueue.addRequest({ url: urlObj.url });
+    if (urlObj?.url) {
+        await requestQueue.addRequest({ url: urlObj.url });
+    }
 }
 
 // Configure Apify proxy
 const proxyConfiguration = new ProxyConfiguration({
     apifyProxyGroups: ['DEFAULT'], // use Apify proxy
-    // apifyProxySession: 'some-session-id', // optional
 });
 
 // Create the crawler
@@ -24,15 +31,13 @@ const crawler = new CheerioCrawler({
     requestQueue,
     proxyConfiguration,
     maxConcurrency: 10,
-    handlePageFunction: async ({ request, $, body }) => {
-        // Example: scrape company info
+    handlePageFunction: async ({ request, $ }) => {
         const result = {
             url: request.url,
             title: $('title').text() || null,
             // Add more scraping logic here
         };
 
-        // Save to default dataset
         await Actor.pushData(result);
     },
     handleFailedRequestFunction: async ({ request }) => {
