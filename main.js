@@ -1,44 +1,49 @@
 import { Actor } from 'apify';
-import { CheerioCrawler, ProxyConfiguration, RequestQueue } from '@crawlee/cheerio';
+import { CheerioCrawler, RequestQueue, ProxyConfiguration } from '@crawlee/cheerio';
 
 await Actor.init();
 
-// Initialize request queue
-const requestQueue = await RequestQueue.open();
-
-// Example input
+// Get input from the form
 const input = await Actor.getInput();
-const startUrls = Array.isArray(input.startUrls) ? input.startUrls : [];
+const { technologies = [], maxResults = 100 } = input;
 
-if (!startUrls.length) {
-    console.log('No startUrls provided. Exiting...');
+// Validate
+if (!technologies.length) {
+    console.log('No technologies provided. Exiting...');
     await Actor.exit();
 }
 
-// Add start URLs to queue
+// Build start URLs from technologies
+const startUrls = technologies.map(tech => ({
+    url: `https://theirstack.com/technologies/${tech}?limit=${maxResults}`
+}));
+
+// Initialize request queue
+const requestQueue = await RequestQueue.open();
 for (const urlObj of startUrls) {
     await requestQueue.addRequest({ url: urlObj.url });
 }
 
-// Configure proxy properly
-const proxyConfiguration = new ProxyConfiguration({
-    // Do not use apifyProxyGroups directly
-    // Use 'apifyProxy' key only if you want Apify Proxy
-    useApifyProxy: true,   // boolean
-    groups: ['RESIDENTIAL'], // optional array of groups
-});
+// Configure default proxy (no need to set apifyProxyGroups manually)
+const proxyConfiguration = new ProxyConfiguration();
 
-// Create the crawler
+// Create crawler
 const crawler = new CheerioCrawler({
     requestQueue,
     proxyConfiguration,
     maxConcurrency: 10,
     handlePageFunction: async ({ request, $ }) => {
-        const result = {
-            url: request.url,
-            title: $('title').text() || null,
-        };
-        await Actor.pushData(result);
+        // Example scraping logic
+        const results = [];
+        $('.company-card a').each((_, el) => {
+            const link = $(el).attr('href');
+            const name = $(el).find('.company-name').text().trim();
+            if (link && name) results.push({ name, url: `https://theirstack.com${link}` });
+        });
+
+        for (const res of results) {
+            await Actor.pushData(res);
+        }
     },
     handleFailedRequestFunction: async ({ request }) => {
         console.log(`Request ${request.url} failed too many times.`);
@@ -47,6 +52,5 @@ const crawler = new CheerioCrawler({
 
 console.log('Starting crawl...');
 await crawler.run();
-
-console.log('Crawl finished, exiting Actor...');
+console.log('Crawl finished. Exiting Actor...');
 await Actor.exit();
