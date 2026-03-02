@@ -1,56 +1,78 @@
 import { Actor } from 'apify';
-import { CheerioCrawler, RequestQueue, ProxyConfiguration } from '@crawlee/cheerio';
+import { CheerioCrawler, RequestQueue } from '@crawlee/cheerio';
 
 await Actor.init();
 
-// Get input from the form
+/**
+ * INPUT
+ */
 const input = await Actor.getInput();
-const { technologies = [], maxResults = 100 } = input;
 
-// Validate
+const technologies = input?.technologies ?? [];
+
 if (!technologies.length) {
-    console.log('No technologies provided. Exiting...');
+    console.log('Field "technologies" is required');
     await Actor.exit();
 }
 
-// Build start URLs from technologies
-const startUrls = technologies.map(tech => ({
-    url: `https://theirstack.com/technologies/${tech}?limit=${maxResults}`
-}));
-
-// Initialize request queue
+/**
+ * CREATE REQUEST QUEUE
+ */
 const requestQueue = await RequestQueue.open();
-for (const urlObj of startUrls) {
-    await requestQueue.addRequest({ url: urlObj.url });
+
+/**
+ * ADD TECHNOLOGY URLS
+ */
+for (const tech of technologies) {
+    const url = `https://theirstack.com/technologies/${tech}?limit=100`;
+
+    await requestQueue.addRequest({
+        url,
+        userData: { tech },
+    });
 }
 
-// Configure default proxy (no need to set apifyProxyGroups manually)
-const proxyConfiguration = new ProxyConfiguration();
-
-// Create crawler
+/**
+ * CRAWLER
+ * ❌ NO PROXY CONFIGURATION
+ * Apify auto handles proxy
+ */
 const crawler = new CheerioCrawler({
     requestQueue,
-    proxyConfiguration,
-    maxConcurrency: 10,
-    handlePageFunction: async ({ request, $ }) => {
-        // Example scraping logic
-        const results = [];
-        $('.company-card a').each((_, el) => {
-            const link = $(el).attr('href');
-            const name = $(el).find('.company-name').text().trim();
-            if (link && name) results.push({ name, url: `https://theirstack.com${link}` });
+    maxConcurrency: 5,
+
+    async requestHandler({ request, $, body }) {
+        console.log(`Processing ${request.url}`);
+
+        const companies = [];
+
+        $('a').each((i, el) => {
+            const name = $(el).text().trim();
+            const href = $(el).attr('href');
+
+            if (href?.includes('/company/')) {
+                companies.push({
+                    technology: request.userData.tech,
+                    company: name,
+                    url: `https://theirstack.com${href}`,
+                });
+            }
         });
 
-        for (const res of results) {
-            await Actor.pushData(res);
+        console.log(`Found ${companies.length} companies`);
+
+        if (companies.length) {
+            await Actor.pushData(companies);
         }
     },
-    handleFailedRequestFunction: async ({ request }) => {
-        console.log(`Request ${request.url} failed too many times.`);
+
+    failedRequestHandler({ request }) {
+        console.log(`Request failed: ${request.url}`);
     },
 });
 
 console.log('Starting crawl...');
 await crawler.run();
-console.log('Crawl finished. Exiting Actor...');
+
+console.log('Crawl finished.');
 await Actor.exit();
