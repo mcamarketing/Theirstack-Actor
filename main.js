@@ -1,67 +1,46 @@
-const { Actor } = require('apify');
-const { PlaywrightCrawler, Dataset, ProxyConfiguration } = require('@crawlee/playwright');
+import { Actor } from 'apify';
+import { CheerioCrawler, ProxyConfiguration, RequestQueue } from '@crawlee/core';
 
-Actor.main(async () => {
-    const input = await Actor.getInput();
-    const {
-        technologies,
-        maxResults = 100,
-        filters = {},
-        proxyConfiguration
-    } = input;
+await Actor.init();
 
-    const proxyConfig = new ProxyConfiguration(proxyConfiguration);
-    const requestQueue = await Actor.openRequestQueue();
+// Initialize request queue
+const requestQueue = await RequestQueue.open();
 
-    for (const tech of technologies) {
-        const url = `https://theirstack.com/en/technologies/${encodeURIComponent(tech)}`;
-        await requestQueue.addRequest({ url, userData: { tech } });
-    }
+// Example: add start URLs from input
+const { startUrls } = await Actor.getInput();
+for (const urlObj of startUrls) {
+    await requestQueue.addRequest({ url: urlObj.url });
+}
 
-    const crawler = new PlaywrightCrawler({
-        requestQueue,
-        proxyConfiguration: proxyConfig,
-        maxConcurrency: 5,
-        launchContext: { launchOptions: { headless: true } },
-
-        async requestHandler({ page, request, log }) {
-            const { tech } = request.userData;
-            log.info(`Scraping technology: ${tech}`);
-
-            // Stealth anti-detection
-            await page.addInitScript(() => {
-                Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            });
-
-            await page.goto(request.url, { waitUntil: 'networkidle' });
-            await page.waitForSelector('table');
-
-            const companies = await page.evaluate(() => {
-                const rows = document.querySelectorAll('table tbody tr');
-                return Array.from(rows).map(row => {
-                    const cols = row.querySelectorAll('td');
-                    return {
-                        company: cols[0]?.innerText?.trim(),
-                        website: cols[1]?.innerText?.trim(),
-                        industry: cols[2]?.innerText?.trim(),
-                        employees: cols[3]?.innerText?.trim(),
-                        location: cols[4]?.innerText?.trim(),
-                    };
-                });
-            });
-
-            for (const company of companies) {
-                await Dataset.pushData({ technology: tech, ...company });
-            }
-
-            log.info(`Saved ${companies.length} companies`);
-        },
-
-        failedRequestHandler({ request }) {
-            console.log(`Request failed: ${request.url}`);
-        }
-    });
-
-    await crawler.run();
-    console.log('Actor finished successfully');
+// Configure Apify proxy (updated API)
+const proxyConfiguration = new ProxyConfiguration({
+    apifyProxyGroups: ['DEFAULT'], // use Apify proxy
+    // apifyProxySession: 'some-session-id', // optional
 });
+
+// Create the crawler
+const crawler = new CheerioCrawler({
+    requestQueue,
+    proxyConfiguration,
+    maxConcurrency: 10,
+    handlePageFunction: async ({ request, $, body }) => {
+        // Example: scrape company info
+        const result = {
+            url: request.url,
+            title: $('title').text() || null,
+            // Add more scraping logic here
+        };
+
+        // Save to default dataset
+        await Actor.pushData(result);
+    },
+    handleFailedRequestFunction: async ({ request }) => {
+        console.log(`Request ${request.url} failed too many times.`);
+    },
+});
+
+console.log('Starting crawl...');
+await crawler.run();
+
+console.log('Crawl finished, exiting Actor...');
+await Actor.exit();
