@@ -1,78 +1,87 @@
 import { Actor } from 'apify';
-import { CheerioCrawler, RequestQueue } from '@crawlee/cheerio';
 
 await Actor.init();
 
-/**
- * INPUT
- */
 const input = await Actor.getInput();
 
-const technologies = input?.technologies ?? [];
+const {
+    technologies = [],
+    country,
+    industry,
+    companySize,
+    maxResults = 100,
+} = input ?? {};
 
 if (!technologies.length) {
-    console.log('Field "technologies" is required');
-    await Actor.exit();
+    throw new Error('Field "technologies" is required');
 }
 
 /**
- * CREATE REQUEST QUEUE
+ * THEIRSTACK QUERY BUILDER
  */
-const requestQueue = await RequestQueue.open();
+function buildQuery(tech, offset = 0) {
+    const params = new URLSearchParams({
+        technology: tech,
+        limit: 100,
+        offset,
+    });
+
+    if (country) params.append('country', country);
+    if (industry) params.append('industry', industry);
+    if (companySize) params.append('companySize', companySize);
+
+    return `https://theirstack.com/api/companies?${params.toString()}`;
+}
 
 /**
- * ADD TECHNOLOGY URLS
+ * FETCH LOOP
  */
 for (const tech of technologies) {
-    const url = `https://theirstack.com/technologies/${tech}?limit=100`;
 
-    await requestQueue.addRequest({
-        url,
-        userData: { tech },
-    });
-}
+    let offset = 0;
+    let collected = 0;
+    let hasMore = true;
 
-/**
- * CRAWLER
- * ❌ NO PROXY CONFIGURATION
- * Apify auto handles proxy
- */
-const crawler = new CheerioCrawler({
-    requestQueue,
-    maxConcurrency: 5,
+    while (hasMore && collected < maxResults) {
 
-    async requestHandler({ request, $, body }) {
-        console.log(`Processing ${request.url}`);
+        const url = buildQuery(tech, offset);
 
-        const companies = [];
+        console.log(`Fetching ${url}`);
 
-        $('a').each((i, el) => {
-            const name = $(el).text().trim();
-            const href = $(el).attr('href');
-
-            if (href?.includes('/company/')) {
-                companies.push({
-                    technology: request.userData.tech,
-                    company: name,
-                    url: `https://theirstack.com${href}`,
-                });
-            }
+        const res = await fetch(url, {
+            headers: {
+                'accept': 'application/json',
+                'user-agent': 'Mozilla/5.0',
+            },
         });
 
-        console.log(`Found ${companies.length} companies`);
+        if (!res.ok) break;
 
-        if (companies.length) {
-            await Actor.pushData(companies);
-        }
-    },
+        const data = await res.json();
 
-    failedRequestHandler({ request }) {
-        console.log(`Request failed: ${request.url}`);
-    },
-});
+        const companies = data?.companies ?? [];
 
-console.log('Starting crawl...');
-await crawler.run();
+        if (!companies.length) break;
 
-console.log('Crawl finished.');
+        const normalized = companies.map(c => ({
+            technology: tech,
+            name: c.name,
+            website: c.website,
+            country: c.country,
+            industry: c.industry,
+            companySize: c.companySize,
+            linkedin: c.linkedin,
+        }));
+
+        await Actor.pushData(normalized);
+
+        collected += companies.length;
+        offset += companies.length;
+
+        hasMore = companies.length > 0;
+    }
+}
+
+console.log('Finished scraping.');
+
 await Actor.exit();
