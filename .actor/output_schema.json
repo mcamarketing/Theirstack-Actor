@@ -1,0 +1,17 @@
+{
+    "actorOutputSchemaVersion": 1,
+    "title": "TheirStack Scraper Output",
+    "description": "Links to scraped companies dataset and files in key-value store",
+    "properties": {
+        "companies": {
+            "type": "string",
+            "title": "Scraped Companies",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
+        },
+        "files": {
+            "type": "string",
+            "title": "Saved Files",
+            "template": "{{links.apiDefaultKeyValueStoreUrl}}/keys"
+        }
+    }
+}
