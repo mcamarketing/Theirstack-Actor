@@ -1,6 +1,7 @@
 {
   "name": "theirstack-scraper",
   "version": "1.0.0",
+  "type": "module",
   "description": "Scrapes TheirStack tech stacks.",
   "main": "main.js",
   "dependencies": {
@@ -8,5 +9,7 @@
     "@crawlee/playwright": "^3.0.0",
     "playwright": "^1.40.0"
   },
-  "scripts": { "start": "node main.js" }
+  "scripts": {
+    "start": "node main.js"
+  }
 }
