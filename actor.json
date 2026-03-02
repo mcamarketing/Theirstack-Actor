@@ -3,6 +3,7 @@
   "name": "theirstack-actor",
   "title": "TheirStack Company & Tech Stack Scraper",
   "version": "1.0.0",
+  "main": "./main.js",
   "input": "./input_schema.json",
   "dockerfile": "./Dockerfile",
   "output": "./.actor/output_schema.json"
