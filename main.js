@@ -23,8 +23,9 @@ for (const tech of technologies) {
     await requestQueue.addRequest({ url });
 }
 
+// Corrected ProxyConfiguration
 const proxyConfiguration = new ProxyConfiguration({
-    apifyProxyGroups: ['RESIDENTIAL'],
+    apifyProxy: 'RESIDENTIAL', // string
 });
 
 const crawler = new CheerioCrawler({
