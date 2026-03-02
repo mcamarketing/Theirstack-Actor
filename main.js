@@ -3,31 +3,32 @@ import { CheerioCrawler, ProxyConfiguration, RequestQueue } from '@crawlee/cheer
 
 await Actor.init();
 
-const input = await Actor.getInput();
-const { technologies = [], maxResultsPerTechnology = 100, filters = {} } = input;
+// Initialize request queue
+const requestQueue = await RequestQueue.open();
 
-if (technologies.length === 0) {
-    console.log('No technologies provided. Exiting...');
+// Example input
+const input = await Actor.getInput();
+const startUrls = Array.isArray(input.startUrls) ? input.startUrls : [];
+
+if (!startUrls.length) {
+    console.log('No startUrls provided. Exiting...');
     await Actor.exit();
 }
 
-const requestQueue = await RequestQueue.open();
-
-// Generate start URLs from technologies and filters
-for (const tech of technologies) {
-    let url = `https://theirstack.com/companies?technology=${encodeURIComponent(tech)}`;
-    if (filters.country) url += `&country=${encodeURIComponent(filters.country)}`;
-    if (filters.industry) url += `&industry=${encodeURIComponent(filters.industry)}`;
-    if (filters.companySize) url += `&companySize=${encodeURIComponent(filters.companySize)}`;
-    
-    await requestQueue.addRequest({ url });
+// Add start URLs to queue
+for (const urlObj of startUrls) {
+    await requestQueue.addRequest({ url: urlObj.url });
 }
 
-// Corrected ProxyConfiguration
+// Configure proxy properly
 const proxyConfiguration = new ProxyConfiguration({
-    apifyProxy: 'RESIDENTIAL', // string
+    // Do not use apifyProxyGroups directly
+    // Use 'apifyProxy' key only if you want Apify Proxy
+    useApifyProxy: true,   // boolean
+    groups: ['RESIDENTIAL'], // optional array of groups
 });
 
+// Create the crawler
 const crawler = new CheerioCrawler({
     requestQueue,
     proxyConfiguration,
@@ -46,5 +47,6 @@ const crawler = new CheerioCrawler({
 
 console.log('Starting crawl...');
 await crawler.run();
+
 console.log('Crawl finished, exiting Actor...');
 await Actor.exit();
