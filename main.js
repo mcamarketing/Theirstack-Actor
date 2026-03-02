@@ -3,30 +3,30 @@ import { CheerioCrawler, ProxyConfiguration, RequestQueue } from '@crawlee/cheer
 
 await Actor.init();
 
-// Get input safely
 const input = await Actor.getInput();
-const startUrls = Array.isArray(input?.startUrls) ? input.startUrls : [];
+const { technologies = [], maxResultsPerTechnology = 100, filters = {} } = input;
 
-if (startUrls.length === 0) {
-    console.log('No startUrls provided. Exiting...');
+if (technologies.length === 0) {
+    console.log('No technologies provided. Exiting...');
     await Actor.exit();
 }
 
-// Initialize request queue
 const requestQueue = await RequestQueue.open();
 
-for (const urlObj of startUrls) {
-    if (urlObj?.url) {
-        await requestQueue.addRequest({ url: urlObj.url });
-    }
+// Generate start URLs from technologies and filters
+for (const tech of technologies) {
+    let url = `https://theirstack.com/companies?technology=${encodeURIComponent(tech)}`;
+    if (filters.country) url += `&country=${encodeURIComponent(filters.country)}`;
+    if (filters.industry) url += `&industry=${encodeURIComponent(filters.industry)}`;
+    if (filters.companySize) url += `&companySize=${encodeURIComponent(filters.companySize)}`;
+    
+    await requestQueue.addRequest({ url });
 }
 
-// Configure Apify proxy
 const proxyConfiguration = new ProxyConfiguration({
-    apifyProxyGroups: ['DEFAULT'], // use Apify proxy
+    apifyProxyGroups: ['RESIDENTIAL'],
 });
 
-// Create the crawler
 const crawler = new CheerioCrawler({
     requestQueue,
     proxyConfiguration,
@@ -35,9 +35,7 @@ const crawler = new CheerioCrawler({
         const result = {
             url: request.url,
             title: $('title').text() || null,
-            // Add more scraping logic here
         };
-
         await Actor.pushData(result);
     },
     handleFailedRequestFunction: async ({ request }) => {
@@ -47,6 +45,5 @@ const crawler = new CheerioCrawler({
 
 console.log('Starting crawl...');
 await crawler.run();
-
 console.log('Crawl finished, exiting Actor...');
 await Actor.exit();
