@@ -7,7 +7,7 @@
     "technologies": {
       "title": "Technologies",
       "type": "array",
-      "description": "List of technology names to search for (e.g. Salesforce, HubSpot).",
+      "description": "List of technology names to search for.",
       "editor": "stringList",
       "example": ["Salesforce"]
     },
@@ -23,19 +23,23 @@
       "description": "Optional filtering criteria.",
       "properties": {
         "country": {
+          "title": "Country",
           "type": "string",
           "description": "Country code filter (e.g. US, UK).",
           "example": "US"
         },
         "minEmployees": {
+          "title": "Minimum Employees",
           "type": "integer",
-          "description": "Minimum company size."
+          "description": "Minimum number of employees."
         },
         "maxEmployees": {
+          "title": "Maximum Employees",
           "type": "integer",
-          "description": "Maximum company size."
+          "description": "Maximum number of employees."
         },
         "industry": {
+          "title": "Industry",
           "type": "string",
           "description": "Industry filter."
         }
