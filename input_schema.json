@@ -1,36 +1,56 @@
 {
   "title": "TheirStack Scraper Input",
+  "description": "Input configuration for scraping companies from TheirStack.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
     "technologies": {
       "title": "Technologies",
       "type": "array",
-      "description": "List of technology names to search for.",
+      "description": "List of technology names to search for (e.g. Salesforce, HubSpot).",
       "editor": "stringList",
       "example": ["Salesforce"]
     },
     "maxResults": {
       "title": "Max results per technology",
       "type": "integer",
+      "description": "Maximum number of companies to scrape per technology.",
       "default": 100
     },
     "filters": {
       "title": "Filters",
       "type": "object",
+      "description": "Optional filtering criteria.",
       "properties": {
-        "country": { "type": "string", "example": "US" },
-        "minEmployees": { "type": "integer" },
-        "maxEmployees": { "type": "integer" },
-        "industry": { "type": "string" }
+        "country": {
+          "type": "string",
+          "description": "Country code filter (e.g. US, UK).",
+          "example": "US"
+        },
+        "minEmployees": {
+          "type": "integer",
+          "description": "Minimum company size."
+        },
+        "maxEmployees": {
+          "type": "integer",
+          "description": "Maximum company size."
+        },
+        "industry": {
+          "type": "string",
+          "description": "Industry filter."
+        }
       },
       "default": {}
     },
     "proxyConfiguration": {
       "title": "Proxy configuration",
       "type": "object",
+      "description": "Apify proxy settings.",
       "editor": "proxy",
-      "default": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"] }
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": ["RESIDENTIAL"]
+      }
     }
   },
   "required": ["technologies"]
