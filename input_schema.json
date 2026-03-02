@@ -3,6 +3,7 @@
   "description": "Input configuration for scraping companies from TheirStack.",
   "type": "object",
   "schemaVersion": 1,
+
   "properties": {
     "technologies": {
       "title": "Technologies",
@@ -11,22 +12,24 @@
       "editor": "stringList",
       "example": ["Salesforce"]
     },
+
     "maxResults": {
       "title": "Max results per technology",
       "type": "integer",
       "description": "Maximum number of companies to scrape per technology.",
       "default": 100
     },
+
     "filters": {
       "title": "Filters",
       "type": "object",
       "description": "Optional filtering criteria.",
+      "editor": "json",
       "properties": {
         "country": {
           "title": "Country",
           "type": "string",
-          "description": "Country code filter (e.g. US, UK).",
-          "example": "US"
+          "description": "Country code filter (e.g. US, UK)."
         },
         "minEmployees": {
           "title": "Minimum Employees",
@@ -46,6 +49,7 @@
       },
       "default": {}
     },
+
     "proxyConfiguration": {
       "title": "Proxy configuration",
       "type": "object",
@@ -57,5 +61,6 @@
       }
     }
   },
+
   "required": ["technologies"]
 }
