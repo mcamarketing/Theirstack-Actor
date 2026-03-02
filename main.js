@@ -1,21 +1,22 @@
 import { Actor } from 'apify';
-import { CheerioCrawler, ProxyConfiguration, RequestQueue } from '@crawlee/core';
+import { CheerioCrawler } from '@crawlee/cheerio';
+import { ProxyConfiguration, RequestQueue } from '@crawlee/core';
 
 await Actor.init();
 
 // Initialize request queue
 const requestQueue = await RequestQueue.open();
 
-// Add start URLs from input
+// Example: add start URLs from input
 const { startUrls } = await Actor.getInput();
 for (const urlObj of startUrls) {
     await requestQueue.addRequest({ url: urlObj.url });
 }
 
-// Configure Apify proxy (corrected)
+// Configure Apify proxy
 const proxyConfiguration = new ProxyConfiguration({
     apifyProxyGroups: ['DEFAULT'], // use Apify proxy
-    // Do NOT include `useApifyProxy` anymore
+    // apifyProxySession: 'some-session-id', // optional
 });
 
 // Create the crawler
@@ -23,12 +24,15 @@ const crawler = new CheerioCrawler({
     requestQueue,
     proxyConfiguration,
     maxConcurrency: 10,
-    handlePageFunction: async ({ request, $ }) => {
+    handlePageFunction: async ({ request, $, body }) => {
+        // Example: scrape company info
         const result = {
             url: request.url,
             title: $('title').text() || null,
             // Add more scraping logic here
         };
+
+        // Save to default dataset
         await Actor.pushData(result);
     },
     handleFailedRequestFunction: async ({ request }) => {
