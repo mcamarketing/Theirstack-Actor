@@ -1,0 +1,12 @@
+{
+  "actorSpecification": 1,
+  "name": "theirstack-scraper",
+  "title": "TheirStack Company & Tech Stack Scraper",
+  "description": "Scrape companies from TheirStack.com by technology stack.",
+  "version": "1.0.0",
+  "meta": {
+    "templateId": "js-playwright"
+  },
+  "input": "./input_schema.json",
+  "dockerfile": "./Dockerfile"
+}

@@ -1,0 +1,37 @@
+{
+  "title": "TheirStack Scraper Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "technologies": {
+      "title": "Technologies",
+      "type": "array",
+      "description": "List of technology names to search for.",
+      "editor": "stringList",
+      "example": ["Salesforce"]
+    },
+    "maxResults": {
+      "title": "Max results per technology",
+      "type": "integer",
+      "default": 100
+    },
+    "filters": {
+      "title": "Filters",
+      "type": "object",
+      "properties": {
+        "country": { "type": "string", "example": "US" },
+        "minEmployees": { "type": "integer" },
+        "maxEmployees": { "type": "integer" },
+        "industry": { "type": "string" }
+      },
+      "default": {}
+    },
+    "proxyConfiguration": {
+      "title": "Proxy configuration",
+      "type": "object",
+      "editor": "proxy",
+      "default": { "useApifyProxy": true, "apifyProxyGroups": ["RESIDENTIAL"] }
+    }
+  },
+  "required": ["technologies"]
+}
