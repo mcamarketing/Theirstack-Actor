@@ -1,87 +1,128 @@
-import { Actor } from 'apify';
+import { Actor, log } from 'apify';
+import fetch from 'node-fetch';
 
 await Actor.init();
 
+/**
+ * ===============================
+ * GET INPUT
+ * ===============================
+ */
 const input = await Actor.getInput();
 
 const {
-    technologies = [],
+    technology,
     country,
     industry,
     companySize,
-    maxResults = 100,
-} = input ?? {};
+    maxResults = 50,
+} = input || {};
 
-if (!technologies.length) {
-    throw new Error('Field "technologies" is required');
+if (!technology) {
+    throw new Error('Technology is required.');
 }
 
+log.info(`Starting scrape for technology: ${technology}`);
+
 /**
- * THEIRSTACK QUERY BUILDER
+ * ===============================
+ * BUILD QUERY URL
+ * ===============================
  */
-function buildQuery(tech, offset = 0) {
-    const params = new URLSearchParams({
-        technology: tech,
-        limit: 100,
-        offset,
-    });
+
+const BASE_URL = 'https://theirstack.com/api/companies';
+
+const buildUrl = (page = 1) => {
+    const params = new URLSearchParams();
+
+    params.append('technology', technology);
+    params.append('page', page);
 
     if (country) params.append('country', country);
     if (industry) params.append('industry', industry);
-    if (companySize) params.append('companySize', companySize);
+    if (companySize) params.append('company_size', companySize);
 
-    return `https://theirstack.com/api/companies?${params.toString()}`;
-}
+    return `${BASE_URL}?${params.toString()}`;
+};
 
 /**
- * FETCH LOOP
+ * ===============================
+ * FETCH DATA
+ * ===============================
  */
-for (const tech of technologies) {
 
-    let offset = 0;
-    let collected = 0;
-    let hasMore = true;
+const results = [];
+let page = 1;
+let keepScraping = true;
 
-    while (hasMore && collected < maxResults) {
+while (keepScraping && results.length < maxResults) {
+    const url = buildUrl(page);
 
-        const url = buildQuery(tech, offset);
+    log.info(`Fetching page ${page}`);
+    log.debug(url);
 
-        console.log(`Fetching ${url}`);
-
-        const res = await fetch(url, {
+    try {
+        const response = await fetch(url, {
             headers: {
-                'accept': 'application/json',
-                'user-agent': 'Mozilla/5.0',
+                'User-Agent': 'ApifyActor-TheProphet.ai',
+                'Accept': 'application/json',
             },
         });
 
-        if (!res.ok) break;
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
 
-        const data = await res.json();
+        const json = await response.json();
 
-        const companies = data?.companies ?? [];
+        const companies = json.data || json.results || [];
 
-        if (!companies.length) break;
+        if (!companies.length) {
+            log.info('No more companies found.');
+            break;
+        }
 
-        const normalized = companies.map(c => ({
-            technology: tech,
-            name: c.name,
-            website: c.website,
-            country: c.country,
-            industry: c.industry,
-            companySize: c.companySize,
-            linkedin: c.linkedin,
-        }));
+        /**
+         * ===============================
+         * NORMALIZE OUTPUT
+         * ===============================
+         */
 
-        await Actor.pushData(normalized);
+        for (const company of companies) {
+            results.push({
+                companyName: company.name || null,
+                website: company.website || null,
+                country: company.country || null,
+                industry: company.industry || null,
+                companySize: company.company_size || null,
+                technologies: company.technologies || [],
+                linkedin: company.linkedin || null,
+                source: 'TheirStack',
+            });
 
-        collected += companies.length;
-        offset += companies.length;
+            if (results.length >= maxResults) break;
+        }
 
-        hasMore = companies.length > 0;
+        page++;
+
+    } catch (err) {
+        log.error(`Failed on page ${page}`, err);
+        keepScraping = false;
     }
 }
 
-console.log('Finished scraping.');
+/**
+ * ===============================
+ * SAVE DATASET
+ * ===============================
+ */
+
+if (!results.length) {
+    log.warning('No results collected.');
+} else {
+    await Actor.pushData(results);
+}
+
+log.info(`Finished. Collected ${results.length} companies.`);
 
 await Actor.exit();
