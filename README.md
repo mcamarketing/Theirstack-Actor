@@ -29,14 +29,14 @@ Scrape companies from [TheirStack](https://theirstack.com) based on the technolo
 }
 ```
 
-| Field | Required | Description |
+| Field | Required | Preset Options |
 |---|---|---|
-| `technology` | ✅ Yes | Technology name, e.g. `"Stripe"`, `"Salesforce"`, `"React"` |
-| `country` | No | Filter by country (partial match), e.g. `"United States"`, `"Germany"` |
-| `industry` | No | Filter by industry (partial match), e.g. `"SaaS"`, `"Fintech"` |
-| `companySize` | No | One of: `1-10`, `11-50`, `51-200`, `201-500`, `501-1000`, `1001-5000`, `5000+` |
-| `maxResults` | No | Number of companies to collect (1–5000, default: 100) |
-| `hunterApiKey` | No | [Hunter.io](https://hunter.io) API key to enrich results with verified emails |
+| `technology` | ✅ Yes | `Stripe` · `Salesforce` · `HubSpot` · `React` · `Shopify` · `Intercom` · `Zendesk` · `AWS` · `Twilio` · `Segment` · **Other** (type any technology name) |
+| `country` | No | `United States` · `United Kingdom` · `Germany` · `France` · `Canada` · `Australia` · `Netherlands` · `India` · `Spain` · `Brazil` · **Other** (type any country) |
+| `industry` | No | `SaaS` · `Fintech` · `E-commerce` · `Healthtech` · `Edtech` · `Marketing` · `Logistics` · `Real Estate` · `HR Tech` · `Cybersecurity` · **Other** (type any industry) |
+| `companySize` | No | `1-10` · `11-50` · `51-200` · `201-500` · `501-1000` · `1001-5000` · `5000+` |
+| `maxResults` | No | `25` · `50` · `100` · `250` · `500` · `1000` · **Other** (enter any number up to 5000, default: 100) |
+| `hunterApiKey` | No | Your [Hunter.io](https://hunter.io) API key — enables verified email enrichment |
 | `proxyConfig` | No | Apify proxy configuration (residential recommended for reliability) |
 
 ---
