@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "Scrapes TheirStack for companies using a given technology, with proxy rotation, pagination, and optional Hunter.io email enrichment.",
   "type": "module",
-  "main": "src/main.js",
+  "main": "main.js",
   "scripts": {
-    "start": "node src/main.js",
+    "start": "node main.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "dependencies": {
