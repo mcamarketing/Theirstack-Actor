@@ -1,64 +1,41 @@
 {
-  "title": "TheirStack Scraper Input",
-  "description": "Input configuration for scraping companies from TheirStack.",
+  "title": "TheirStack Company & Tech Stack Scraper",
   "type": "object",
   "schemaVersion": 1,
-
   "properties": {
     "technologies": {
       "title": "Technologies",
       "type": "array",
-      "description": "List of technology names to search for.",
+      "description": "Technologies to search companies for.",
       "editor": "stringList",
-      "example": ["Salesforce"]
+      "items": {
+        "type": "string"
+      }
+    },
+
+    "country": {
+      "title": "Country",
+      "type": "string",
+      "description": "Filter companies by country (optional)."
+    },
+
+    "industry": {
+      "title": "Industry",
+      "type": "string",
+      "description": "Filter companies by industry (optional)."
+    },
+
+    "companySize": {
+      "title": "Company Size",
+      "type": "string",
+      "description": "Filter by company size (optional). Example: 11-50, 51-200."
     },
 
     "maxResults": {
-      "title": "Max results per technology",
+      "title": "Maximum Results",
       "type": "integer",
-      "description": "Maximum number of companies to scrape per technology.",
+      "description": "Maximum number of companies per technology.",
       "default": 100
-    },
-
-    "filters": {
-      "title": "Filters",
-      "type": "object",
-      "description": "Optional filtering criteria.",
-      "editor": "json",
-      "properties": {
-        "country": {
-          "title": "Country",
-          "type": "string",
-          "description": "Country code filter (e.g. US, UK)."
-        },
-        "minEmployees": {
-          "title": "Minimum Employees",
-          "type": "integer",
-          "description": "Minimum number of employees."
-        },
-        "maxEmployees": {
-          "title": "Maximum Employees",
-          "type": "integer",
-          "description": "Maximum number of employees."
-        },
-        "industry": {
-          "title": "Industry",
-          "type": "string",
-          "description": "Industry filter."
-        }
-      },
-      "default": {}
-    },
-
-    "proxyConfiguration": {
-      "title": "Proxy configuration",
-      "type": "object",
-      "description": "Apify proxy settings.",
-      "editor": "proxy",
-      "default": {
-        "useApifyProxy": true,
-        "apifyProxyGroups": ["RESIDENTIAL"]
-      }
     }
   },
 
