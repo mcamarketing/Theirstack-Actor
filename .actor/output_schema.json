@@ -1,17 +1,35 @@
 {
-    "actorOutputSchemaVersion": 1,
-    "title": "TheirStack Scraper Output",
-    "description": "Links to scraped companies dataset and files in key-value store",
-    "properties": {
-        "companies": {
-            "type": "string",
-            "title": "Scraped Companies",
-            "template": "{{links.apiDefaultDatasetUrl}}/items"
-        },
-        "files": {
-            "type": "string",
-            "title": "Saved Files",
-            "template": "{{links.apiDefaultKeyValueStoreUrl}}/keys"
-        }
+  "title": "TheirStack Companies Dataset",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "companyName": {
+      "type": "string",
+      "title": "Company Name"
+    },
+    "website": {
+      "type": "string",
+      "title": "Website"
+    },
+    "technology": {
+      "type": "string",
+      "title": "Technology"
+    },
+    "country": {
+      "type": "string",
+      "title": "Country"
+    },
+    "industry": {
+      "type": "string",
+      "title": "Industry"
+    },
+    "companySize": {
+      "type": "string",
+      "title": "Company Size"
+    },
+    "sourceUrl": {
+      "type": "string",
+      "title": "Source URL"
     }
+  }
 }
