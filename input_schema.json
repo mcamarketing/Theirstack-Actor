@@ -1,42 +1,38 @@
 {
-  "title": "TheirStack Scraper Input",
+  "title": "TheirStack Company Scraper",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
-    "technologies": {
-      "title": "Technologies",
-      "type": "array",
-      "description": "Technologies to search for (e.g. crm, ai, marketing).",
-      "editor": "stringList",
-      "items": {
-        "type": "string"
-      }
+    "technology": {
+      "title": "Technology",
+      "type": "string",
+      "description": "Technology used by companies (e.g. Salesforce, HubSpot)",
+      "editor": "textfield"
     },
     "country": {
       "title": "Country",
       "type": "string",
-      "description": "Filter companies by country (optional).",
+      "description": "Filter companies by country",
       "editor": "textfield"
     },
     "industry": {
       "title": "Industry",
       "type": "string",
-      "description": "Filter by industry (optional).",
+      "description": "Filter companies by industry",
       "editor": "textfield"
     },
     "companySize": {
       "title": "Company Size",
       "type": "string",
-      "description": "Filter by company size (optional).",
+      "description": "Company size range (e.g. 1-10, 11-50, 51-200)",
       "editor": "textfield"
     },
     "maxResults": {
-      "title": "Max results per technology",
+      "title": "Maximum Results",
       "type": "integer",
-      "description": "Maximum companies per technology.",
-      "default": 100,
+      "default": 50,
       "editor": "number"
     }
   },
-  "required": ["technologies"]
+  "required": ["technology"]
 }
