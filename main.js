@@ -4,7 +4,7 @@
  */
 
 import { Actor, log } from 'apify';
-import { PlaywrightCrawler, RequestQueue } from 'crawlee';
+import { PlaywrightCrawler } from 'crawlee';
 import pLimit from 'p-limit';
 
 await Actor.init();
@@ -12,29 +12,42 @@ await Actor.init();
 // ─── Input ────────────────────────────────────────────────────────────────────
 
 const input = await Actor.getInput();
+
+log.info('Raw input received: ' + JSON.stringify(input));
+
 const {
-    technology,
-    country,
-    industry,
+    technology: technologyRaw,
+    customTechnology,
+    country: countryRaw,
+    customCountry,
+    industry: industryRaw,
+    customIndustry,
     companySize,
     maxResults = 100,
-    hunterApiKey = null,       // optional: Hunter.io for email enrichment
+    hunterApiKey = null,
     proxyConfig: proxyInput,
 } = input ?? {};
 
-if (!technology) {
-    log.error('"technology" is required. Exiting.');
+// Resolve "Other" selections to their custom field values
+const technology = technologyRaw === 'Other' ? customTechnology : technologyRaw;
+const country    = countryRaw    === 'Other' ? customCountry    : countryRaw;
+const industry   = industryRaw   === 'Other' ? customIndustry   : industryRaw;
+
+if (!technology || technology.trim() === '') {
+    log.error('"technology" is required. If you selected Other, make sure you filled in the Custom Technology field.');
     await Actor.exit({ exitCode: 1 });
 }
+
+log.info(`Starting scrape — Technology: ${technology} | Country: ${country ?? 'any'} | Industry: ${industry ?? 'any'} | Size: ${companySize ?? 'any'} | Max: ${maxResults}`);
 
 // ─── Proxy ────────────────────────────────────────────────────────────────────
 
 const proxyConfiguration = await Actor.createProxyConfiguration({
-    groups: ['RESIDENTIAL'],   // use Apify residential proxies
+    groups: ['RESIDENTIAL'],
     ...(proxyInput ?? {}),
 });
 
-// ─── Enrichment: Hunter.io (email finder) ─────────────────────────────────────
+// ─── Enrichment: Hunter.io ────────────────────────────────────────────────────
 
 async function enrichWithHunter(domain) {
     if (!hunterApiKey || !domain) return {};
@@ -55,7 +68,7 @@ async function enrichWithHunter(domain) {
     }
 }
 
-// ─── Enrichment: Domain → Clean URL ──────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function extractDomain(url) {
     try {
@@ -69,7 +82,7 @@ function extractDomain(url) {
 
 const collected = [];
 const seen = new Set();
-const limit = pLimit(5); // max 5 concurrent enrichment calls
+const limit = pLimit(5);
 
 // ─── Scraper ──────────────────────────────────────────────────────────────────
 
@@ -88,40 +101,34 @@ const crawler = new PlaywrightCrawler({
         const pageNum = request.userData?.page ?? 1;
         log.info(`Scraping page ${pageNum} for technology: ${technology}`);
 
-        // Wait for company cards to appear
         await page.waitForSelector('[data-testid="company-row"], .company-card, table tbody tr', {
             timeout: 20_000,
         }).catch(() => {
             log.warning('Company list selector not found — page structure may have changed.');
         });
 
-        // ── Parse companies ──────────────────────────────────────────────────
-        // NOTE: Selectors below target TheirStack's actual table layout.
-        // Run `page.content()` and inspect if they stop working after a redesign.
         const companies = await page.evaluate(() => {
             const rows = document.querySelectorAll('[data-testid="company-row"]');
             return Array.from(rows).map(row => ({
-                name:     row.querySelector('[data-testid="company-name"]')?.textContent?.trim() ?? null,
-                website:  row.querySelector('[data-testid="company-website"] a')?.href ?? null,
-                country:  row.querySelector('[data-testid="company-country"]')?.textContent?.trim() ?? null,
-                industry: row.querySelector('[data-testid="company-industry"]')?.textContent?.trim() ?? null,
-                size:     row.querySelector('[data-testid="company-size"]')?.textContent?.trim() ?? null,
+                name:          row.querySelector('[data-testid="company-name"]')?.textContent?.trim() ?? null,
+                website:       row.querySelector('[data-testid="company-website"] a')?.href ?? null,
+                country:       row.querySelector('[data-testid="company-country"]')?.textContent?.trim() ?? null,
+                industry:      row.querySelector('[data-testid="company-industry"]')?.textContent?.trim() ?? null,
+                size:          row.querySelector('[data-testid="company-size"]')?.textContent?.trim() ?? null,
                 techsDetected: row.querySelector('[data-testid="tech-list"]')?.textContent?.trim() ?? null,
             }));
         });
 
         log.info(`Found ${companies.length} companies on page ${pageNum}`);
 
-        // ── Filter ───────────────────────────────────────────────────────────
         const filtered = companies.filter(c => {
             if (seen.has(c.name)) return false;
-            if (country    && !c.country?.toLowerCase().includes(country.toLowerCase()))    return false;
-            if (industry   && !c.industry?.toLowerCase().includes(industry.toLowerCase()))  return false;
-            if (companySize && !c.size?.toLowerCase().includes(companySize.toLowerCase())) return false;
+            if (country     && !c.country?.toLowerCase().includes(country.toLowerCase()))     return false;
+            if (industry    && !c.industry?.toLowerCase().includes(industry.toLowerCase()))   return false;
+            if (companySize && !c.size?.toLowerCase().includes(companySize.toLowerCase()))    return false;
             return c.name != null;
         });
 
-        // ── Enrich concurrently ───────────────────────────────────────────────
         const enriched = await Promise.all(
             filtered.map(company =>
                 limit(async () => {
@@ -131,8 +138,8 @@ const crawler = new PlaywrightCrawler({
                     return {
                         ...company,
                         domain,
-                        scrapedAt: new Date().toISOString(),
                         technology,
+                        scrapedAt: new Date().toISOString(),
                         ...hunterData,
                     };
                 })
@@ -148,7 +155,6 @@ const crawler = new PlaywrightCrawler({
 
         log.info(`Total collected: ${collected.length} / ${maxResults}`);
 
-        // ── Pagination ────────────────────────────────────────────────────────
         if (collected.length < maxResults) {
             const nextBtn = await page.$('[data-testid="next-page"], a[aria-label="Next page"]');
             if (nextBtn) {
@@ -168,7 +174,7 @@ const crawler = new PlaywrightCrawler({
     },
 });
 
-// ─── Kick off ─────────────────────────────────────────────────────────────────
+// ─── Run ──────────────────────────────────────────────────────────────────────
 
 const startUrl = `https://theirstack.com/technologies/${encodeURIComponent(technology)}`;
 
