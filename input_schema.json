@@ -1,12 +1,60 @@
 {
-  "title": "TheirStack Actor Input",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TheirStack Company Scraper",
   "type": "object",
   "properties": {
-    "technology": { "type": "string", "title": "Technology" },
-    "country": { "type": "string", "title": "Country" },
-    "industry": { "type": "string", "title": "Industry" },
-    "companySize": { "type": "string", "title": "Company Size" },
-    "maxResults": { "type": "integer", "title": "Max Results", "default": 50 }
+    "technology": {
+      "type": "string",
+      "title": "Technology",
+      "description": "Technology name to find companies using it (e.g. 'Salesforce', 'Stripe', 'React')",
+      "minLength": 1,
+      "editor": "textfield",
+      "example": "Stripe"
+    },
+    "country": {
+      "type": "string",
+      "title": "Country Filter",
+      "description": "Filter results by country name (partial match, optional)",
+      "editor": "textfield",
+      "example": "United States"
+    },
+    "industry": {
+      "type": "string",
+      "title": "Industry Filter",
+      "description": "Filter results by industry (partial match, optional)",
+      "editor": "textfield",
+      "example": "SaaS"
+    },
+    "companySize": {
+      "type": "string",
+      "title": "Company Size Filter",
+      "description": "Filter by company size band (optional)",
+      "editor": "select",
+      "enum": ["", "1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5000+"],
+      "default": ""
+    },
+    "maxResults": {
+      "type": "integer",
+      "title": "Max Results",
+      "description": "Maximum number of companies to collect",
+      "minimum": 1,
+      "maximum": 5000,
+      "default": 100,
+      "editor": "number"
+    },
+    "hunterApiKey": {
+      "type": "string",
+      "title": "Hunter.io API Key (optional)",
+      "description": "Provide your Hunter.io key to enrich results with verified email addresses and contact patterns",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "proxyConfig": {
+      "title": "Proxy Configuration",
+      "description": "Apify proxy settings (residential recommended for reliability)",
+      "editor": "proxy",
+      "type": "object"
+    }
   },
   "required": ["technology"]
 }
