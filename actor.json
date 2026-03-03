@@ -1,10 +1,54 @@
 {
   "actorSpecification": 1,
-  "name": "theirstack-actor",
+  "name": "theirstack-company-scraper",
   "title": "TheirStack Company & Tech Stack Scraper",
+  "description": "Scrapes TheirStack.com for companies using a given technology. Supports country, industry, and size filters, proxy rotation, pagination, and optional Hunter.io email enrichment.",
   "version": "1.0.0",
-  "main": "./main.js",
-  "input": "./input_schema.json",
-  "dockerfile": "./Dockerfile",
-  "output": "./.actor/output_schema.json"
+  "meta": {
+    "templateId": "js-playwright"
+  },
+  "main": "./src/main.js",
+  "storages": {
+    "dataset": {
+      "actorSpecification": 1,
+      "title": "TheirStack Companies",
+      "description": "Companies detected using the specified technology, with optional email enrichment.",
+      "views": {
+        "overview": {
+          "title": "Companies Overview",
+          "transformation": {
+            "fields": [
+              "name",
+              "domain",
+              "website",
+              "technology",
+              "country",
+              "industry",
+              "size",
+              "emails",
+              "emailPattern",
+              "contactsFound",
+              "scrapedAt"
+            ]
+          },
+          "display": {
+            "component": "table",
+            "properties": {
+              "name":          { "label": "Company",        "format": "text" },
+              "domain":        { "label": "Domain",         "format": "text" },
+              "website":       { "label": "Website",        "format": "link" },
+              "technology":    { "label": "Technology",     "format": "text" },
+              "country":       { "label": "Country",        "format": "text" },
+              "industry":      { "label": "Industry",       "format": "text" },
+              "size":          { "label": "Size",           "format": "text" },
+              "emails":        { "label": "Emails",         "format": "array" },
+              "emailPattern":  { "label": "Email Pattern",  "format": "text" },
+              "contactsFound": { "label": "Contacts Found", "format": "number" },
+              "scrapedAt":     { "label": "Scraped At",     "format": "datetime" }
+            }
+          }
+        }
+      }
+    }
+  }
 }
