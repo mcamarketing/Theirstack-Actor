@@ -1,38 +1,12 @@
 {
-  "title": "TheirStack Company Scraper",
+  "title": "TheirStack Actor Input",
   "type": "object",
-  "schemaVersion": 1,
   "properties": {
-    "technology": {
-      "title": "Technology",
-      "type": "string",
-      "description": "Technology used by companies (e.g. Salesforce, HubSpot)",
-      "editor": "textfield"
-    },
-    "country": {
-      "title": "Country",
-      "type": "string",
-      "description": "Filter companies by country",
-      "editor": "textfield"
-    },
-    "industry": {
-      "title": "Industry",
-      "type": "string",
-      "description": "Filter companies by industry",
-      "editor": "textfield"
-    },
-    "companySize": {
-      "title": "Company Size",
-      "type": "string",
-      "description": "Company size range (e.g. 1-10, 11-50, 51-200)",
-      "editor": "textfield"
-    },
-    "maxResults": {
-      "title": "Maximum Results",
-      "type": "integer",
-      "default": 50,
-      "editor": "number"
-    }
+    "technology": { "type": "string", "title": "Technology" },
+    "country": { "type": "string", "title": "Country" },
+    "industry": { "type": "string", "title": "Industry" },
+    "companySize": { "type": "string", "title": "Company Size" },
+    "maxResults": { "type": "integer", "title": "Max Results", "default": 50 }
   },
   "required": ["technology"]
 }
