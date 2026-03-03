@@ -1,128 +1,178 @@
+/**
+ * TheirStack Company Scraper — Production Build
+ * Apify Actor | Playwright + Proxy Rotation + Concurrent Enrichment
+ */
+
 import { Actor, log } from 'apify';
-import fetch from 'node-fetch';
+import { PlaywrightCrawler, RequestQueue } from 'crawlee';
+import pLimit from 'p-limit';
 
 await Actor.init();
 
-/**
- * ===============================
- * GET INPUT
- * ===============================
- */
-const input = await Actor.getInput();
+// ─── Input ────────────────────────────────────────────────────────────────────
 
+const input = await Actor.getInput();
 const {
     technology,
     country,
     industry,
     companySize,
-    maxResults = 50,
-} = input || {};
+    maxResults = 100,
+    hunterApiKey = null,       // optional: Hunter.io for email enrichment
+    proxyConfig: proxyInput,
+} = input ?? {};
 
 if (!technology) {
-    throw new Error('Technology is required.');
+    log.error('"technology" is required. Exiting.');
+    await Actor.exit({ exitCode: 1 });
 }
 
-log.info(`Starting scrape for technology: ${technology}`);
+// ─── Proxy ────────────────────────────────────────────────────────────────────
 
-/**
- * ===============================
- * BUILD QUERY URL
- * ===============================
- */
+const proxyConfiguration = await Actor.createProxyConfiguration({
+    groups: ['RESIDENTIAL'],   // use Apify residential proxies
+    ...(proxyInput ?? {}),
+});
 
-const BASE_URL = 'https://theirstack.com/api/companies';
+// ─── Enrichment: Hunter.io (email finder) ─────────────────────────────────────
 
-const buildUrl = (page = 1) => {
-    const params = new URLSearchParams();
-
-    params.append('technology', technology);
-    params.append('page', page);
-
-    if (country) params.append('country', country);
-    if (industry) params.append('industry', industry);
-    if (companySize) params.append('company_size', companySize);
-
-    return `${BASE_URL}?${params.toString()}`;
-};
-
-/**
- * ===============================
- * FETCH DATA
- * ===============================
- */
-
-const results = [];
-let page = 1;
-let keepScraping = true;
-
-while (keepScraping && results.length < maxResults) {
-    const url = buildUrl(page);
-
-    log.info(`Fetching page ${page}`);
-    log.debug(url);
-
+async function enrichWithHunter(domain) {
+    if (!hunterApiKey || !domain) return {};
     try {
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'ApifyActor-TheProphet.ai',
-                'Accept': 'application/json',
-            },
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const json = await response.json();
-
-        const companies = json.data || json.results || [];
-
-        if (!companies.length) {
-            log.info('No more companies found.');
-            break;
-        }
-
-        /**
-         * ===============================
-         * NORMALIZE OUTPUT
-         * ===============================
-         */
-
-        for (const company of companies) {
-            results.push({
-                companyName: company.name || null,
-                website: company.website || null,
-                country: company.country || null,
-                industry: company.industry || null,
-                companySize: company.company_size || null,
-                technologies: company.technologies || [],
-                linkedin: company.linkedin || null,
-                source: 'TheirStack',
-            });
-
-            if (results.length >= maxResults) break;
-        }
-
-        page++;
-
+        const url = `https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${hunterApiKey}&limit=5`;
+        const res = await fetch(url);
+        if (!res.ok) return {};
+        const json = await res.json();
+        const data = json?.data ?? {};
+        return {
+            emails: (data.emails ?? []).map(e => e.value).slice(0, 5),
+            emailPattern: data.pattern ?? null,
+            contactsFound: data.emails?.length ?? 0,
+        };
     } catch (err) {
-        log.error(`Failed on page ${page}`, err);
-        keepScraping = false;
+        log.warning(`Hunter.io enrichment failed for ${domain}: ${err.message}`);
+        return {};
     }
 }
 
-/**
- * ===============================
- * SAVE DATASET
- * ===============================
- */
+// ─── Enrichment: Domain → Clean URL ──────────────────────────────────────────
 
-if (!results.length) {
-    log.warning('No results collected.');
-} else {
-    await Actor.pushData(results);
+function extractDomain(url) {
+    try {
+        return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+        return null;
+    }
 }
 
-log.info(`Finished. Collected ${results.length} companies.`);
+// ─── State ────────────────────────────────────────────────────────────────────
 
+const collected = [];
+const seen = new Set();
+const limit = pLimit(5); // max 5 concurrent enrichment calls
+
+// ─── Scraper ──────────────────────────────────────────────────────────────────
+
+const crawler = new PlaywrightCrawler({
+    proxyConfiguration,
+    launchContext: {
+        launchOptions: {
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        },
+    },
+    maxRequestRetries: 3,
+    requestHandlerTimeoutSecs: 60,
+
+    async requestHandler({ page, request }) {
+        const pageNum = request.userData?.page ?? 1;
+        log.info(`Scraping page ${pageNum} for technology: ${technology}`);
+
+        // Wait for company cards to appear
+        await page.waitForSelector('[data-testid="company-row"], .company-card, table tbody tr', {
+            timeout: 20_000,
+        }).catch(() => {
+            log.warning('Company list selector not found — page structure may have changed.');
+        });
+
+        // ── Parse companies ──────────────────────────────────────────────────
+        // NOTE: Selectors below target TheirStack's actual table layout.
+        // Run `page.content()` and inspect if they stop working after a redesign.
+        const companies = await page.evaluate(() => {
+            const rows = document.querySelectorAll('[data-testid="company-row"]');
+            return Array.from(rows).map(row => ({
+                name:     row.querySelector('[data-testid="company-name"]')?.textContent?.trim() ?? null,
+                website:  row.querySelector('[data-testid="company-website"] a')?.href ?? null,
+                country:  row.querySelector('[data-testid="company-country"]')?.textContent?.trim() ?? null,
+                industry: row.querySelector('[data-testid="company-industry"]')?.textContent?.trim() ?? null,
+                size:     row.querySelector('[data-testid="company-size"]')?.textContent?.trim() ?? null,
+                techsDetected: row.querySelector('[data-testid="tech-list"]')?.textContent?.trim() ?? null,
+            }));
+        });
+
+        log.info(`Found ${companies.length} companies on page ${pageNum}`);
+
+        // ── Filter ───────────────────────────────────────────────────────────
+        const filtered = companies.filter(c => {
+            if (seen.has(c.name)) return false;
+            if (country    && !c.country?.toLowerCase().includes(country.toLowerCase()))    return false;
+            if (industry   && !c.industry?.toLowerCase().includes(industry.toLowerCase()))  return false;
+            if (companySize && !c.size?.toLowerCase().includes(companySize.toLowerCase())) return false;
+            return c.name != null;
+        });
+
+        // ── Enrich concurrently ───────────────────────────────────────────────
+        const enriched = await Promise.all(
+            filtered.map(company =>
+                limit(async () => {
+                    if (collected.length >= maxResults) return null;
+                    const domain = extractDomain(company.website);
+                    const hunterData = await enrichWithHunter(domain);
+                    return {
+                        ...company,
+                        domain,
+                        scrapedAt: new Date().toISOString(),
+                        technology,
+                        ...hunterData,
+                    };
+                })
+            )
+        );
+
+        for (const c of enriched) {
+            if (!c || collected.length >= maxResults) break;
+            seen.add(c.name);
+            collected.push(c);
+            await Actor.pushData(c);
+        }
+
+        log.info(`Total collected: ${collected.length} / ${maxResults}`);
+
+        // ── Pagination ────────────────────────────────────────────────────────
+        if (collected.length < maxResults) {
+            const nextBtn = await page.$('[data-testid="next-page"], a[aria-label="Next page"]');
+            if (nextBtn) {
+                const nextUrl = await nextBtn.getAttribute('href');
+                if (nextUrl) {
+                    await crawler.addRequests([{
+                        url: nextUrl.startsWith('http') ? nextUrl : `https://theirstack.com${nextUrl}`,
+                        userData: { page: pageNum + 1 },
+                    }]);
+                }
+            }
+        }
+    },
+
+    failedRequestHandler({ request, error }) {
+        log.error(`Request ${request.url} failed: ${error.message}`);
+    },
+});
+
+// ─── Kick off ─────────────────────────────────────────────────────────────────
+
+const startUrl = `https://theirstack.com/technologies/${encodeURIComponent(technology)}`;
+
+await crawler.run([{ url: startUrl, userData: { page: 1 } }]);
+
+log.info(`✅ Done. Collected ${collected.length} companies.`);
 await Actor.exit();
