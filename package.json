@@ -1,14 +1,20 @@
 {
-  "name": "theirstack-scraper",
+  "name": "theirstack-company-scraper",
   "version": "1.0.0",
+  "description": "Scrapes TheirStack for companies using a given technology, with proxy rotation, pagination, and optional Hunter.io email enrichment.",
   "type": "module",
-  "description": "Scrapes TheirStack tech stacks.",
-  "main": "main.js",
-  "dependencies": {
-    "apify": "^3.6.0",
-    "node-fetch": "^3.3.2"
-  },
+  "main": "src/main.js",
   "scripts": {
-    "start": "node main.js"
+    "start": "node src/main.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "dependencies": {
+    "apify": "^3.1.10",
+    "crawlee": "^3.5.8",
+    "p-limit": "^5.0.0",
+    "playwright": "^1.41.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
