@@ -5,10 +5,8 @@
   "description": "Scrapes TheirStack tech stacks.",
   "main": "main.js",
   "dependencies": {
-    "@crawlee/cheerio": "^3.16.0",
-    "@crawlee/playwright": "^3.0.0",
-    "apify": "^3.1.10",
-    "playwright": "^1.40.0"
+    "apify": "^3.6.0",
+    "node-fetch": "^3.3.2"
   },
   "scripts": {
     "start": "node main.js"
