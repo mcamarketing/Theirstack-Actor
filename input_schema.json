@@ -1,61 +1,187 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "schemaVersion": 1,
-  "title": "TheirStack Company Scraper",
+  "title": "Theirstack Actor",
+  "description": "Scrape companies by technology from TheirStack. Filter by country, industry, or company size.",
   "type": "object",
+  "schemaVersion": 1,
+  "required": ["technology"],
   "properties": {
     "technology": {
-      "type": "string",
       "title": "Technology",
-      "description": "Technology name to find companies using it (e.g. 'Salesforce', 'Stripe', 'React')",
-      "minLength": 1,
-      "editor": "textfield",
-      "example": "Stripe"
+      "type": "string",
+      "description": "Select a technology or choose 'Other' to type your own.",
+      "editor": "select",
+      "enum": [
+        "Stripe",
+        "Salesforce",
+        "HubSpot",
+        "React",
+        "Shopify",
+        "Intercom",
+        "Zendesk",
+        "AWS",
+        "Twilio",
+        "Segment",
+        "Other"
+      ],
+      "enumTitles": [
+        "Stripe",
+        "Salesforce",
+        "HubSpot",
+        "React",
+        "Shopify",
+        "Intercom",
+        "Zendesk",
+        "AWS",
+        "Twilio",
+        "Segment",
+        "Other (type manually below)"
+      ]
+    },
+    "customTechnology": {
+      "title": "Custom Technology",
+      "type": "string",
+      "description": "If you selected 'Other' above, type your technology name here (e.g. 'Postgres', 'Datadog', 'Figma').",
+      "editor": "textfield"
     },
     "country": {
-      "type": "string",
       "title": "Country Filter",
-      "description": "Filter results by country name (partial match, optional)",
-      "editor": "textfield",
-      "example": "United States"
+      "type": "string",
+      "description": "Filter results by country. Select a preset or choose 'Other' to type your own.",
+      "editor": "select",
+      "enum": [
+        "",
+        "United States",
+        "United Kingdom",
+        "Germany",
+        "France",
+        "Canada",
+        "Australia",
+        "Netherlands",
+        "India",
+        "Spain",
+        "Brazil",
+        "Other"
+      ],
+      "enumTitles": [
+        "Any country",
+        "United States",
+        "United Kingdom",
+        "Germany",
+        "France",
+        "Canada",
+        "Australia",
+        "Netherlands",
+        "India",
+        "Spain",
+        "Brazil",
+        "Other (type manually below)"
+      ],
+      "default": ""
+    },
+    "customCountry": {
+      "title": "Custom Country",
+      "type": "string",
+      "description": "If you selected 'Other' above, type your country name here (e.g. 'Sweden', 'Singapore').",
+      "editor": "textfield"
     },
     "industry": {
-      "type": "string",
       "title": "Industry Filter",
-      "description": "Filter results by industry (partial match, optional)",
-      "editor": "textfield",
-      "example": "SaaS"
+      "type": "string",
+      "description": "Filter results by industry. Select a preset or choose 'Other' to type your own.",
+      "editor": "select",
+      "enum": [
+        "",
+        "SaaS",
+        "Fintech",
+        "E-commerce",
+        "Healthtech",
+        "Edtech",
+        "Marketing",
+        "Logistics",
+        "Real Estate",
+        "HR Tech",
+        "Cybersecurity",
+        "Other"
+      ],
+      "enumTitles": [
+        "Any industry",
+        "SaaS",
+        "Fintech",
+        "E-commerce",
+        "Healthtech",
+        "Edtech",
+        "Marketing",
+        "Logistics",
+        "Real Estate",
+        "HR Tech",
+        "Cybersecurity",
+        "Other (type manually below)"
+      ],
+      "default": ""
+    },
+    "customIndustry": {
+      "title": "Custom Industry",
+      "type": "string",
+      "description": "If you selected 'Other' above, type your industry here (e.g. 'Proptech', 'Legaltech').",
+      "editor": "textfield"
     },
     "companySize": {
-      "type": "string",
       "title": "Company Size Filter",
-      "description": "Filter by company size band (optional)",
+      "type": "string",
+      "description": "Filter by number of employees.",
       "editor": "select",
-      "enum": ["", "1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5000+"],
+      "enum": [
+        "",
+        "1-10",
+        "11-50",
+        "51-200",
+        "201-500",
+        "501-1000",
+        "1001-5000",
+        "5000+"
+      ],
+      "enumTitles": [
+        "Any size",
+        "1–10 employees",
+        "11–50 employees",
+        "51–200 employees",
+        "201–500 employees",
+        "501–1,000 employees",
+        "1,001–5,000 employees",
+        "5,000+ employees"
+      ],
       "default": ""
     },
     "maxResults": {
-      "type": "integer",
       "title": "Max Results",
-      "description": "Maximum number of companies to collect",
-      "minimum": 1,
-      "maximum": 5000,
-      "default": 100,
-      "editor": "number"
+      "type": "integer",
+      "description": "Maximum number of companies to collect (1–5000).",
+      "editor": "select",
+      "enum": [25, 50, 100, 250, 500, 1000, 2500, 5000],
+      "enumTitles": [
+        "25 companies",
+        "50 companies",
+        "100 companies",
+        "250 companies",
+        "500 companies",
+        "1,000 companies",
+        "2,500 companies",
+        "5,000 companies"
+      ],
+      "default": 100
     },
     "hunterApiKey": {
-      "type": "string",
       "title": "Hunter.io API Key (optional)",
-      "description": "Provide your Hunter.io key to enrich results with verified email addresses and contact patterns",
+      "type": "string",
+      "description": "Provide your Hunter.io key to enrich results with verified email addresses and contact patterns.",
       "editor": "textfield",
       "isSecret": true
     },
     "proxyConfig": {
       "title": "Proxy Configuration",
-      "description": "Apify proxy settings (residential recommended for reliability)",
-      "editor": "proxy",
-      "type": "object"
+      "type": "object",
+      "description": "Apify proxy settings. Residential proxy recommended for best reliability.",
+      "editor": "proxy"
     }
-  },
-  "required": ["technology"]
+  }
 }
