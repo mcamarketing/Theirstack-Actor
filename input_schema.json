@@ -155,19 +155,10 @@
     "maxResults": {
       "title": "Max Results",
       "type": "integer",
-      "description": "Maximum number of companies to collect (1–5000).",
-      "editor": "select",
-      "enum": [25, 50, 100, 250, 500, 1000, 2500, 5000],
-      "enumTitles": [
-        "25 companies",
-        "50 companies",
-        "100 companies",
-        "250 companies",
-        "500 companies",
-        "1,000 companies",
-        "2,500 companies",
-        "5,000 companies"
-      ],
+      "description": "Maximum number of companies to collect. Recommended: 25, 50, 100, 250, 500, 1000, 2500, 5000.",
+      "editor": "number",
+      "minimum": 1,
+      "maximum": 5000,
       "default": 100
     },
     "hunterApiKey": {
