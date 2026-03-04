@@ -1,18 +1,15 @@
 {
-  "name": "theirstack-company-scraper",
+  "name": "theirstack-scraper",
   "version": "1.0.0",
-  "description": "Find companies by technology using the TheirStack API, with optional Hunter.io email enrichment.",
   "type": "module",
+  "description": "Scrapes TheirStack public technology pages",
   "main": "main.js",
   "scripts": {
-    "start": "node main.js",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    "start": "node main.js"
   },
   "dependencies": {
-    "apify": "^3.1.10",
-    "p-limit": "^5.0.0"
-  },
-  "engines": {
-    "node": ">=18"
+    "apify": "^3.0.0",
+    "crawlee": "^3.0.0",
+    "playwright": "^1.40.0"
   }
 }
