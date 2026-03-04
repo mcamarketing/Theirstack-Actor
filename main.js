@@ -125,6 +125,11 @@ async function searchCompanies({ technologySlug, countryCode, minEmployees, maxE
         return searchCompanies({ technologySlug, countryCode, minEmployees, maxEmployees, page, limit });
     }
 
+    if (res.status === 402) {
+        log.warning('Out of TheirStack API credits (402) — stopping. Top up at https://app.theirstack.com/settings/billing');
+        return null; // signal caller to stop
+    }
+
     if (!res.ok) {
         const errText = await res.text();
         throw new Error(`TheirStack API error ${res.status}: ${errText}`);
@@ -136,10 +141,34 @@ async function searchCompanies({ technologySlug, countryCode, minEmployees, maxE
 }
 
 // ─── Client-side industry filter ──────────────────────────────────────────────
+// TheirStack uses LinkedIn industry names. Build a flexible matcher that handles
+// common aliases like "Edtech" → matches "Education", "E-Learning", "EdTech", etc.
+const INDUSTRY_ALIASES = {
+    'edtech':      ['education', 'e-learning', 'elearning', 'edtech', 'ed tech'],
+    'saas':        ['software', 'saas', 'internet'],
+    'fintech':     ['financial', 'fintech', 'banking', 'insurance'],
+    'healthtech':  ['health', 'medical', 'hospital', 'wellness', 'healthtech'],
+    'martech':     ['marketing', 'advertising', 'martech'],
+    'hrtech':      ['human resources', 'staffing', 'hrtech', 'recruiting'],
+    'legaltech':   ['legal', 'law', 'legaltech'],
+    'proptech':    ['real estate', 'proptech'],
+    'cleantech':   ['renewable', 'energy', 'environmental', 'cleantech'],
+    'logistics':   ['logistics', 'transportation', 'supply chain', 'shipping'],
+};
+
 function matchesIndustry(company) {
     if (!industry) return true;
     const ind = (company.industry ?? '').toLowerCase();
-    return ind.includes(industry.toLowerCase());
+    const search = industry.toLowerCase();
+
+    // Direct substring match first
+    if (ind.includes(search)) return true;
+
+    // Check alias expansions
+    const aliases = INDUSTRY_ALIASES[search];
+    if (aliases) return aliases.some(alias => ind.includes(alias));
+
+    return false;
 }
 
 // ─── Hunter.io enrichment ─────────────────────────────────────────────────────
@@ -176,6 +205,11 @@ while (collected.length < maxResults) {
         technologySlug, countryCode, minEmployees, maxEmployees,
         page, limit: PAGE_SIZE,
     });
+
+    if (companies === null) {
+        log.info('Stopping due to insufficient credits.');
+        break;
+    }
 
     if (!companies.length) {
         log.info('No more results from API.');
