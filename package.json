@@ -1,7 +1,7 @@
 {
   "name": "theirstack-company-scraper",
   "version": "1.0.0",
-  "description": "Scrapes TheirStack for companies using a given technology, with proxy rotation, pagination, and optional Hunter.io email enrichment.",
+  "description": "Find companies by technology using the TheirStack API, with optional Hunter.io email enrichment.",
   "type": "module",
   "main": "main.js",
   "scripts": {
@@ -10,9 +10,7 @@
   },
   "dependencies": {
     "apify": "^3.1.10",
-    "crawlee": "^3.5.8",
-    "p-limit": "^5.0.0",
-    "playwright": "^1.41.0"
+    "p-limit": "^5.0.0"
   },
   "engines": {
     "node": ">=18"
