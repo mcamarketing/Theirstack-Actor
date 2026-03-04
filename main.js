@@ -38,10 +38,23 @@ function matchesIndustry(text, filter) {
     return (INDUSTRY_ALIASES[s] ?? []).some(a => t.includes(a));
 }
 
+function parseEmployeeCount(empText) {
+    if (!empText) return null;
+    const t = empText.trim().replace(/,/g, '');
+    const m = t.match(/^([\d.]+)\s*([kKmMbB])?/);
+    if (!m) return null;
+    let n = parseFloat(m[1]);
+    const suffix = (m[2] ?? '').toLowerCase();
+    if (suffix === 'k') n *= 1_000;
+    else if (suffix === 'm') n *= 1_000_000;
+    else if (suffix === 'b') n *= 1_000_000_000;
+    return Math.round(n);
+}
+
 function matchesSize(empText, sizeStr) {
-    if (!sizeStr || !empText) return true;
-    const n = parseInt((empText ?? '').replace(/[^0-9]/g, ''));
-    if (isNaN(n)) return true;
+    if (!sizeStr) return true;
+    const n = parseEmployeeCount(empText);
+    if (n == null) return true;  // can't parse = don't exclude
     if (sizeStr.endsWith('+')) return n >= parseInt(sizeStr);
     const [mn, mx] = sizeStr.split('-').map(Number);
     return n >= mn && n <= mx;
@@ -132,57 +145,37 @@ const crawler = new PlaywrightCrawler({
             log.info('=== PAGE HTML (first 3000 chars) ===\n' + html.slice(0, 3000));
         }
 
-        // ── Extract: try multiple selector strategies ────────────────────────
+        // ── Extract: company rows have exactly 6 cells ────────────────────────
+        // (Country stats rows at bottom only have 2 cells — skip those)
         const companies = await page.evaluate(() => {
             const results = [];
 
-            // Strategy 1: <table> rows
             const rows = document.querySelectorAll('table tbody tr');
-            if (rows.length > 0) {
-                rows.forEach(row => {
-                    const tds   = Array.from(row.querySelectorAll('td'));
-                    const texts = tds.map(td => td.innerText.trim());
-                    const link  = row.querySelector('a[href]');
-                    const href  = link?.href ?? '';
-                    results.push({
-                        name:      texts[0] || null,
-                        domain:    href.includes('://') ? new URL(href).hostname.replace('www.','') : null,
-                        country:   texts[1] || null,
-                        industry:  texts[2] || null,
-                        employees: texts[3] || null,
-                        linkedin:  null,
-                        _strategy: 'table',
-                    });
-                });
-                return results;
-            }
+            rows.forEach(row => {
+                const tds = Array.from(row.querySelectorAll('td'));
+                if (tds.length !== 6) return; // skip non-company rows
 
-            // Strategy 2: any <a> tag containing a company domain inside a list/grid
-            // Look for elements with a pattern of repeated structure
-            const allLinks = Array.from(document.querySelectorAll('a[href]'));
-            const companyLinks = allLinks.filter(a => {
-                const href = a.href;
-                return href.includes('/company/') || href.includes('linkedin.com/company');
+                const getText = i => tds[i]?.innerText?.trim().split('\n')[0].trim() || null;
+
+                // LinkedIn URL from company cell
+                const linkedinLink = tds[0].querySelector('a[href*="linkedin.com"]');
+                // TheirStack company slug from any /company/ link
+                const tsLink = Array.from(tds[0].querySelectorAll('a[href*="/company/"]'))[0];
+                const slug = tsLink?.href?.match(/\/company\/([^/?#]+)/)?.[1] ?? null;
+
+                results.push({
+                    name:      getText(0),
+                    domain:    slug,          // e.g. "capgemini" — best we can get without login
+                    country:   getText(1),
+                    industry:  getText(2),
+                    employees: getText(3),    // e.g. "420k"
+                    revenue:   getText(4),
+                    linkedin:  linkedinLink?.href ?? null,
+                    _strategy: 'table-6col',
+                });
             });
 
-            if (companyLinks.length > 0) {
-                companyLinks.forEach(link => {
-                    const parent = link.closest('li, tr, div[class], article') ?? link.parentElement;
-                    const text   = parent?.innerText?.trim() ?? '';
-                    results.push({
-                        name:      link.innerText.trim() || text.split('\n')[0] || null,
-                        domain:    null,
-                        country:   null,
-                        industry:  null,
-                        employees: null,
-                        linkedin:  link.href.includes('linkedin') ? link.href : null,
-                        _strategy: 'company-link',
-                    });
-                });
-                return results;
-            }
-
-            // Strategy 3: dump all visible text blocks for manual inspection
+            if (results.length > 0) return results;
             return [{ _debug: true, text: document.body.innerText.slice(0, 500) }];
         });
 
@@ -197,7 +190,7 @@ const crawler = new PlaywrightCrawler({
         for (const c of companies) {
             if (stopped || collected.length >= maxResults) { stopped = true; break; }
             if (!matchesIndustry(c.industry, industry)) continue;
-            if (!matchesSize(c.employees, companySize)) continue;
+            if (!matchesSize(c.employees?.replace(/[^0-9kKmMbB.]/g, ''), companySize)) continue;
 
             const enrichment = await enrichWithHunter(c.domain);
             const record = {
@@ -219,36 +212,18 @@ const crawler = new PlaywrightCrawler({
 
         if (stopped || collected.length >= maxResults) { stopped = true; return; }
 
-        // ── Pagination: find next page link ──────────────────────────────────
-        const nextHref = await page.evaluate(() => {
-            // rel="next" is the cleanest signal
-            const rel = document.querySelector('a[rel="next"]');
-            if (rel) return rel.href;
-
-            // aria-label="next page" / "next"
-            const aria = Array.from(document.querySelectorAll('a')).find(a =>
-                /next/i.test(a.getAttribute('aria-label') ?? '') ||
-                /next/i.test(a.innerText)
-            );
-            if (aria) return aria.href;
-
-            return null;
-        });
-
-        if (nextHref && nextHref !== request.url) {
-            log.info(`Next page: ${nextHref}`);
-            await enqueueLinks({ urls: [nextHref] });
-        } else {
-            // Fallback: bump ?page= param
+        // ── Pagination: always construct ?page=N ────────────────────────────
+        // The "Go to next page" button links to app.theirstack.com (requires login).
+        // The public site paginates via ?page=2, ?page=3 etc.
+        const validCompanies = companies.filter(c => !c._debug);
+        if (validCompanies.length >= 10) {
             const url = new URL(request.url);
             const cur = parseInt(url.searchParams.get('page') ?? '1');
-            if (companies.length >= 8) {   // assume full page = more pages exist
-                url.searchParams.set('page', cur + 1);
-                log.info(`Constructed next: ${url}`);
-                await enqueueLinks({ urls: [url.toString()] });
-            } else {
-                log.info('Reached last page.');
-            }
+            url.searchParams.set('page', cur + 1);
+            log.info(`Enqueuing page ${cur + 1}: ${url}`);
+            await enqueueLinks({ urls: [url.toString()] });
+        } else {
+            log.info('Last page reached.');
         }
     },
 
