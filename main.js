@@ -1,10 +1,9 @@
 /**
- * TheirStack Company Scraper — Production Build
- * Apify Actor | Playwright + Proxy Rotation + Concurrent Enrichment
+ * TheirStack Company Scraper — API Build
+ * Apify Actor | TheirStack API + Optional Hunter.io Enrichment
  */
 
 import { Actor, log } from 'apify';
-import { PlaywrightCrawler } from 'crawlee';
 import pLimit from 'p-limit';
 
 await Actor.init();
@@ -25,27 +24,28 @@ const {
     companySize,
     maxResults = 100,
     hunterApiKey = null,
-    proxyConfig: proxyInput,
 } = input ?? {};
 
-// Resolve "Other" selections to their custom field values
+// Resolve "Other" selections
 const technology = technologyRaw === 'Other' ? customTechnology : technologyRaw;
 const country    = countryRaw    === 'Other' ? customCountry    : countryRaw;
 const industry   = industryRaw   === 'Other' ? customIndustry   : industryRaw;
 
 if (!technology || technology.trim() === '') {
-    log.error('"technology" is required. If you selected Other, make sure you filled in the Custom Technology field.');
+    log.error('"technology" is required.');
     await Actor.exit({ exitCode: 1 });
 }
 
-log.info(`Starting scrape — Technology: ${technology} | Country: ${country ?? 'any'} | Industry: ${industry ?? 'any'} | Size: ${companySize ?? 'any'} | Max: ${maxResults}`);
+// ─── TheirStack API Key (stored as Apify secret) ──────────────────────────────
 
-// ─── Proxy ────────────────────────────────────────────────────────────────────
+const THEIRSTACK_API_KEY = process.env.THEIRSTACK_API_KEY;
 
-const proxyConfiguration = await Actor.createProxyConfiguration({
-    groups: ['RESIDENTIAL'],
-    ...(proxyInput ?? {}),
-});
+if (!THEIRSTACK_API_KEY) {
+    log.error('THEIRSTACK_API_KEY environment variable is not set. Add it in Actor Settings → Environment Variables.');
+    await Actor.exit({ exitCode: 1 });
+}
+
+log.info(`Starting — Technology: ${technology} | Country: ${country ?? 'any'} | Industry: ${industry ?? 'any'} | Size: ${companySize ?? 'any'} | Max: ${maxResults}`);
 
 // ─── Enrichment: Hunter.io ────────────────────────────────────────────────────
 
@@ -68,125 +68,103 @@ async function enrichWithHunter(domain) {
     }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── TheirStack API Search ────────────────────────────────────────────────────
 
-function extractDomain(url) {
-    try {
-        return new URL(url).hostname.replace(/^www\./, '');
-    } catch {
-        return null;
+async function searchCompanies({ technology, country, industry, companySize, page = 0, limit = 100 }) {
+    const body = {
+        technology_slugs: [technology],
+        page,
+        limit,
+        include_total_results: false,
+    };
+
+    if (country)     body.company_country_name_partial_match = [country];
+    if (industry)    body.company_industry_partial_match = [industry];
+    if (companySize) body.company_num_employees_ranges = [companySize];
+
+    const res = await fetch('https://api.theirstack.com/v1/companies/search', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${THEIRSTACK_API_KEY}`,
+        },
+        body: JSON.stringify(body),
+    });
+
+    if (res.status === 429) {
+        log.warning('Rate limited by TheirStack API — waiting 15 seconds...');
+        await new Promise(r => setTimeout(r, 15_000));
+        return searchCompanies({ technology, country, industry, companySize, page, limit });
     }
+
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`TheirStack API error ${res.status}: ${err}`);
+    }
+
+    const json = await res.json();
+    return json?.data ?? [];
 }
 
-// ─── State ────────────────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
+const limit = pLimit(3);
 const collected = [];
-const seen = new Set();
-const limit = pLimit(5);
+let page = 0;
+const pageSize = Math.min(100, maxResults);
 
-// ─── Scraper ──────────────────────────────────────────────────────────────────
+while (collected.length < maxResults) {
+    log.info(`Fetching page ${page}...`);
 
-const crawler = new PlaywrightCrawler({
-    proxyConfiguration,
-    launchContext: {
-        launchOptions: {
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        },
-    },
-    maxRequestRetries: 3,
-    requestHandlerTimeoutSecs: 60,
+    const companies = await searchCompanies({
+        technology,
+        country,
+        industry,
+        companySize,
+        page,
+        limit: pageSize,
+    });
 
-    async requestHandler({ page, request }) {
-        const pageNum = request.userData?.page ?? 1;
-        log.info(`Scraping page ${pageNum} for technology: ${technology}`);
+    if (!companies.length) {
+        log.info('No more results from TheirStack.');
+        break;
+    }
 
-        await page.waitForSelector('[data-testid="company-row"], .company-card, table tbody tr', {
-            timeout: 20_000,
-        }).catch(() => {
-            log.warning('Company list selector not found — page structure may have changed.');
-        });
+    // Enrich concurrently with Hunter.io
+    const enriched = await Promise.all(
+        companies.map(company =>
+            limit(async () => {
+                if (collected.length >= maxResults) return null;
+                const domain = company.domain ?? null;
+                const hunterData = await enrichWithHunter(domain);
+                return {
+                    name:        company.name ?? null,
+                    domain:      domain,
+                    website:     company.website ?? null,
+                    linkedin:    company.linkedin_url ?? null,
+                    country:     company.country ?? null,
+                    industry:    company.industry ?? null,
+                    employees:   company.num_employees ?? null,
+                    companySize: company.num_employees_range ?? null,
+                    technology,
+                    scrapedAt:   new Date().toISOString(),
+                    ...hunterData,
+                };
+            })
+        )
+    );
 
-        // ── Debug: dump page HTML so we can find real selectors ──────────────
-        const html = await page.content();
-        log.info('PAGE URL: ' + page.url());
-        log.info('PAGE HTML SNIPPET: ' + html.substring(0, 5000));
-        // ─────────────────────────────────────────────────────────────────────
+    for (const c of enriched) {
+        if (!c || collected.length >= maxResults) break;
+        collected.push(c);
+        await Actor.pushData(c);
+    }
 
-        const companies = await page.evaluate(() => {
-            const rows = document.querySelectorAll('[data-testid="company-row"]');
-            return Array.from(rows).map(row => ({
-                name:          row.querySelector('[data-testid="company-name"]')?.textContent?.trim() ?? null,
-                website:       row.querySelector('[data-testid="company-website"] a')?.href ?? null,
-                country:       row.querySelector('[data-testid="company-country"]')?.textContent?.trim() ?? null,
-                industry:      row.querySelector('[data-testid="company-industry"]')?.textContent?.trim() ?? null,
-                size:          row.querySelector('[data-testid="company-size"]')?.textContent?.trim() ?? null,
-                techsDetected: row.querySelector('[data-testid="tech-list"]')?.textContent?.trim() ?? null,
-            }));
-        });
+    log.info(`Collected ${collected.length} / ${maxResults}`);
 
-        log.info(`Found ${companies.length} companies on page ${pageNum}`);
-
-        const filtered = companies.filter(c => {
-            if (seen.has(c.name)) return false;
-            if (country     && !c.country?.toLowerCase().includes(country.toLowerCase()))     return false;
-            if (industry    && !c.industry?.toLowerCase().includes(industry.toLowerCase()))   return false;
-            if (companySize && !c.size?.toLowerCase().includes(companySize.toLowerCase()))    return false;
-            return c.name != null;
-        });
-
-        const enriched = await Promise.all(
-            filtered.map(company =>
-                limit(async () => {
-                    if (collected.length >= maxResults) return null;
-                    const domain = extractDomain(company.website);
-                    const hunterData = await enrichWithHunter(domain);
-                    return {
-                        ...company,
-                        domain,
-                        technology,
-                        scrapedAt: new Date().toISOString(),
-                        ...hunterData,
-                    };
-                })
-            )
-        );
-
-        for (const c of enriched) {
-            if (!c || collected.length >= maxResults) break;
-            seen.add(c.name);
-            collected.push(c);
-            await Actor.pushData(c);
-        }
-
-        log.info(`Total collected: ${collected.length} / ${maxResults}`);
-
-        if (collected.length < maxResults) {
-            const nextBtn = await page.$('[data-testid="next-page"], a[aria-label="Next page"]');
-            if (nextBtn) {
-                const nextUrl = await nextBtn.getAttribute('href');
-                if (nextUrl) {
-                    await crawler.addRequests([{
-                        url: nextUrl.startsWith('http') ? nextUrl : `https://theirstack.com${nextUrl}`,
-                        userData: { page: pageNum + 1 },
-                    }]);
-                }
-            }
-        }
-    },
-
-    failedRequestHandler({ request, error }) {
-        log.error(`Request ${request.url} failed: ${error.message}`);
-    },
-});
-
-// ─── Run ──────────────────────────────────────────────────────────────────────
-
-const startUrl = `https://theirstack.com/technologies/${encodeURIComponent(technology)}`;
-
-log.info(`Starting URL: ${startUrl}`);
-
-await crawler.run([{ url: startUrl, userData: { page: 1 } }]);
+    if (companies.length < pageSize) break; // last page
+    page++;
+}
 
 log.info(`✅ Done. Collected ${collected.length} companies.`);
 await Actor.exit();
