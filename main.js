@@ -36,7 +36,10 @@ if (!technology || technology.trim() === '') {
     await Actor.exit({ exitCode: 1 });
 }
 
-// ─── TheirStack API Key (stored as Apify secret) ──────────────────────────────
+// Convert technology name to slug (e.g. "HubSpot" → "hubspot", "My Tool" → "my-tool")
+const technologySlug = technology.trim().toLowerCase().replace(/\s+/g, '-');
+
+// ─── TheirStack API Key (stored as Apify secret env var) ─────────────────────
 
 const THEIRSTACK_API_KEY = process.env.THEIRSTACK_API_KEY;
 
@@ -45,7 +48,7 @@ if (!THEIRSTACK_API_KEY) {
     await Actor.exit({ exitCode: 1 });
 }
 
-log.info(`Starting — Technology: ${technology} | Country: ${country ?? 'any'} | Industry: ${industry ?? 'any'} | Size: ${companySize ?? 'any'} | Max: ${maxResults}`);
+log.info(`Starting — Technology: ${technology} (slug: ${technologySlug}) | Country: ${country ?? 'any'} | Industry: ${industry ?? 'any'} | Size: ${companySize ?? 'any'} | Max: ${maxResults}`);
 
 // ─── Enrichment: Hunter.io ────────────────────────────────────────────────────
 
@@ -70,9 +73,9 @@ async function enrichWithHunter(domain) {
 
 // ─── TheirStack API Search ────────────────────────────────────────────────────
 
-async function searchCompanies({ technology, country, industry, companySize, page = 0, limit = 100 }) {
+async function searchCompanies({ technologySlug, country, industry, companySize, page = 0, limit = 100 }) {
     const body = {
-        technology_slugs: [technology],
+        company_technology_slug_or: [technologySlug],
         page,
         limit,
         include_total_results: false,
@@ -81,6 +84,8 @@ async function searchCompanies({ technology, country, industry, companySize, pag
     if (country)     body.company_country_name_partial_match = [country];
     if (industry)    body.company_industry_partial_match = [industry];
     if (companySize) body.company_num_employees_ranges = [companySize];
+
+    log.info('TheirStack request body: ' + JSON.stringify(body));
 
     const res = await fetch('https://api.theirstack.com/v1/companies/search', {
         method: 'POST',
@@ -94,7 +99,7 @@ async function searchCompanies({ technology, country, industry, companySize, pag
     if (res.status === 429) {
         log.warning('Rate limited by TheirStack API — waiting 15 seconds...');
         await new Promise(r => setTimeout(r, 15_000));
-        return searchCompanies({ technology, country, industry, companySize, page, limit });
+        return searchCompanies({ technologySlug, country, industry, companySize, page, limit });
     }
 
     if (!res.ok) {
@@ -103,12 +108,13 @@ async function searchCompanies({ technology, country, industry, companySize, pag
     }
 
     const json = await res.json();
-    return json?.data ?? [];
+    log.info('TheirStack response keys: ' + JSON.stringify(Object.keys(json)));
+    return json?.data ?? json ?? [];
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-const limit = pLimit(3);
+const limiter = pLimit(3);
 const collected = [];
 let page = 0;
 const pageSize = Math.min(100, maxResults);
@@ -117,7 +123,7 @@ while (collected.length < maxResults) {
     log.info(`Fetching page ${page}...`);
 
     const companies = await searchCompanies({
-        technology,
+        technologySlug,
         country,
         industry,
         companySize,
@@ -125,15 +131,14 @@ while (collected.length < maxResults) {
         limit: pageSize,
     });
 
-    if (!companies.length) {
+    if (!Array.isArray(companies) || companies.length === 0) {
         log.info('No more results from TheirStack.');
         break;
     }
 
-    // Enrich concurrently with Hunter.io
     const enriched = await Promise.all(
         companies.map(company =>
-            limit(async () => {
+            limiter(async () => {
                 if (collected.length >= maxResults) return null;
                 const domain = company.domain ?? null;
                 const hunterData = await enrichWithHunter(domain);
@@ -162,7 +167,7 @@ while (collected.length < maxResults) {
 
     log.info(`Collected ${collected.length} / ${maxResults}`);
 
-    if (companies.length < pageSize) break; // last page
+    if (companies.length < pageSize) break;
     page++;
 }
 
