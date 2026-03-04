@@ -107,6 +107,12 @@ const crawler = new PlaywrightCrawler({
             log.warning('Company list selector not found — page structure may have changed.');
         });
 
+        // ── Debug: dump page HTML so we can find real selectors ──────────────
+        const html = await page.content();
+        log.info('PAGE URL: ' + page.url());
+        log.info('PAGE HTML SNIPPET: ' + html.substring(0, 5000));
+        // ─────────────────────────────────────────────────────────────────────
+
         const companies = await page.evaluate(() => {
             const rows = document.querySelectorAll('[data-testid="company-row"]');
             return Array.from(rows).map(row => ({
@@ -177,6 +183,8 @@ const crawler = new PlaywrightCrawler({
 // ─── Run ──────────────────────────────────────────────────────────────────────
 
 const startUrl = `https://theirstack.com/technologies/${encodeURIComponent(technology)}`;
+
+log.info(`Starting URL: ${startUrl}`);
 
 await crawler.run([{ url: startUrl, userData: { page: 1 } }]);
 
