@@ -1,66 +1,74 @@
 /**
  * TheirStack Company Finder — Apify Actor
- * Uses the official TheirStack API v1
- * Docs: https://api.theirstack.com
+ * Scrapes public TheirStack technology pages (no API key or credits required)
+ * URL pattern: https://theirstack.com/en/technology/{slug}/{country?}?page={n}
  */
 
 import { Actor, log } from 'apify';
-import pLimit from 'p-limit';
+import { PlaywrightCrawler } from 'crawlee';
 
 await Actor.init();
 
-// ─── Country name → ISO2 code ─────────────────────────────────────────────────
+// ─── Country name → ISO2 code (lowercase for URL) ────────────────────────────
 const COUNTRY_CODES = {
-    'united states': 'US', 'usa': 'US', 'us': 'US',
-    'united kingdom': 'GB', 'uk': 'GB', 'gb': 'GB',
-    'germany': 'DE', 'france': 'FR', 'canada': 'CA',
-    'australia': 'AU', 'netherlands': 'NL', 'india': 'IN',
-    'spain': 'ES', 'brazil': 'BR', 'italy': 'IT',
-    'sweden': 'SE', 'norway': 'NO', 'denmark': 'DK',
-    'finland': 'FI', 'singapore': 'SG', 'israel': 'IL',
-    'ireland': 'IE', 'portugal': 'PT', 'belgium': 'BE',
-    'switzerland': 'CH', 'austria': 'AT', 'poland': 'PL',
-    'mexico': 'MX', 'argentina': 'AR', 'colombia': 'CO',
-    'chile': 'CL', 'japan': 'JP', 'south korea': 'KR',
-    'china': 'CN', 'new zealand': 'NZ', 'south africa': 'ZA',
-    'uae': 'AE', 'united arab emirates': 'AE',
+    'united states': 'us', 'usa': 'us',
+    'united kingdom': 'gb', 'uk': 'gb',
+    'germany': 'de', 'france': 'fr', 'canada': 'ca',
+    'australia': 'au', 'netherlands': 'nl', 'india': 'in',
+    'spain': 'es', 'brazil': 'br', 'italy': 'it',
+    'sweden': 'se', 'norway': 'no', 'denmark': 'dk',
+    'finland': 'fi', 'singapore': 'sg', 'israel': 'il',
+    'ireland': 'ie', 'portugal': 'pt', 'belgium': 'be',
+    'switzerland': 'ch', 'austria': 'at', 'poland': 'pl',
+    'mexico': 'mx', 'argentina': 'ar', 'colombia': 'co',
+    'chile': 'cl', 'japan': 'jp', 'south korea': 'kr',
+    'china': 'cn', 'new zealand': 'nz', 'south africa': 'za',
+    'uae': 'ae', 'united arab emirates': 'ae',
 };
 
-function countryToCode(name) {
-    if (!name || name.trim() === '') return null;
-    const key = name.toLowerCase().trim();
-    const code = COUNTRY_CODES[key] ?? key.toUpperCase();
-    if (code.length !== 2) {
-        log.warning(`Could not resolve country "${name}" to ISO2 code — skipping country filter`);
-        return null;
-    }
-    return code;
+// ─── Industry alias matching ──────────────────────────────────────────────────
+const INDUSTRY_ALIASES = {
+    'edtech':     ['education', 'e-learning', 'elearning', 'edtech'],
+    'saas':       ['software', 'saas', 'internet'],
+    'fintech':    ['financial', 'fintech', 'banking', 'insurance'],
+    'healthtech': ['health', 'medical', 'hospital', 'wellness'],
+    'martech':    ['marketing', 'advertising'],
+    'hrtech':     ['human resources', 'staffing', 'recruiting'],
+    'legaltech':  ['legal', 'law'],
+    'proptech':   ['real estate'],
+    'cleantech':  ['renewable', 'energy', 'environmental'],
+    'logistics':  ['logistics', 'transportation', 'supply chain'],
+};
+
+function matchesIndustry(industryText, filter) {
+    if (!filter) return true;
+    const ind = (industryText ?? '').toLowerCase();
+    const search = filter.toLowerCase();
+    if (ind.includes(search)) return true;
+    const aliases = INDUSTRY_ALIASES[search];
+    if (aliases) return aliases.some(a => ind.includes(a));
+    return false;
 }
 
-// ─── Parse employee size range ────────────────────────────────────────────────
-function parseEmployeeRange(sizeStr) {
-    if (!sizeStr) return { min: null, max: null };
-    if (sizeStr.endsWith('+')) {
-        return { min: parseInt(sizeStr), max: null };
-    }
-    const parts = sizeStr.split('-').map(s => parseInt(s.trim()));
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-        return { min: parts[0], max: parts[1] };
-    }
-    return { min: null, max: null };
+function matchesSize(employeeCount, sizeStr) {
+    if (!sizeStr || employeeCount == null) return true;
+    const count = parseInt(employeeCount);
+    if (isNaN(count)) return true;
+    if (sizeStr.endsWith('+')) return count >= parseInt(sizeStr);
+    const [min, max] = sizeStr.split('-').map(Number);
+    return count >= min && count <= max;
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 const input = await Actor.getInput();
-log.info('Raw input: ' + JSON.stringify(input));
+log.info('Input: ' + JSON.stringify(input));
 
 const {
     technology: technologyRaw,
     customTechnology,
     country: countryRaw,
     customCountry,
-    industry: industryRaw,
-    customIndustry,
+    industry,
     companySize,
     maxResults = 100,
     hunterApiKey = null,
@@ -68,108 +76,25 @@ const {
 
 const technology = (technologyRaw === 'Other' ? customTechnology : technologyRaw)?.trim();
 const country    = (countryRaw    === 'Other' ? customCountry    : countryRaw)?.trim();
-const industry   = (industryRaw   === 'Other' ? customIndustry   : industryRaw)?.trim();
 
 if (!technology) {
     log.error('"technology" input is required.');
     await Actor.exit({ exitCode: 1 });
 }
 
-const technologySlug = technology.toLowerCase().replace(/\s+/g, '-');
-const countryCode    = countryToCode(country);
-const { min: minEmployees, max: maxEmployees } = parseEmployeeRange(companySize);
+const techSlug    = technology.toLowerCase().replace(/\s+/g, '-');
+const countryCode = country ? (COUNTRY_CODES[country.toLowerCase()] ?? country.toLowerCase()) : null;
 
-const THEIRSTACK_API_KEY = process.env.THEIRSTACK_API_KEY;
-if (!THEIRSTACK_API_KEY) {
-    log.error('THEIRSTACK_API_KEY environment variable is not set. Add it in Actor → Settings → Environment Variables.');
-    await Actor.exit({ exitCode: 1 });
-}
+// Build start URL: https://theirstack.com/en/technology/react/us
+const baseUrl = countryCode
+    ? `https://theirstack.com/en/technology/${techSlug}/${countryCode}`
+    : `https://theirstack.com/en/technology/${techSlug}`;
 
-log.info(
-    `Starting — Technology: ${technology} (slug: ${technologySlug})` +
-    ` | Country: ${country || 'any'} (${countryCode || 'no filter'})` +
-    ` | Industry: ${industry || 'any'} (client-side filter)` +
-    ` | Employees: ${companySize || 'any'} (min=${minEmployees}, max=${maxEmployees})` +
-    ` | Max results: ${maxResults}`
-);
+log.info(`Scraping: ${baseUrl} | Industry: ${industry || 'any'} | Size: ${companySize || 'any'} | Max: ${maxResults}`);
 
-// ─── TheirStack API call ──────────────────────────────────────────────────────
-async function searchCompanies({ technologySlug, countryCode, minEmployees, maxEmployees, page, limit }) {
-    // Only include fields defined in CompanySearchFilters (additionalProperties: false)
-    const body = {
-        company_technology_slug_or: [technologySlug],
-        page,
-        limit,
-        include_total_results: false,
-        order_by: [{ field: 'employee_count', desc: true }],
-    };
-
-    if (countryCode)    body.company_country_code_or = [countryCode];
-    if (minEmployees)   body.min_employee_count = minEmployees;
-    if (maxEmployees)   body.max_employee_count = maxEmployees;
-
-    log.info(`Page ${page} request body: ${JSON.stringify(body)}`);
-
-    const res = await fetch('https://api.theirstack.com/v1/companies/search', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${THEIRSTACK_API_KEY}`,
-        },
-        body: JSON.stringify(body),
-    });
-
-    if (res.status === 429) {
-        log.warning('Rate limited (429) — waiting 15s...');
-        await new Promise(r => setTimeout(r, 15_000));
-        return searchCompanies({ technologySlug, countryCode, minEmployees, maxEmployees, page, limit });
-    }
-
-    if (res.status === 402) {
-        log.warning('Out of TheirStack API credits (402) — stopping. Top up at https://app.theirstack.com/settings/billing');
-        return null; // signal caller to stop
-    }
-
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`TheirStack API error ${res.status}: ${errText}`);
-    }
-
-    const json = await res.json();
-    // Response shape: { metadata: {...}, data: [...] }
-    return Array.isArray(json?.data) ? json.data : [];
-}
-
-// ─── Client-side industry filter ──────────────────────────────────────────────
-// TheirStack uses LinkedIn industry names. Build a flexible matcher that handles
-// common aliases like "Edtech" → matches "Education", "E-Learning", "EdTech", etc.
-const INDUSTRY_ALIASES = {
-    'edtech':      ['education', 'e-learning', 'elearning', 'edtech', 'ed tech'],
-    'saas':        ['software', 'saas', 'internet'],
-    'fintech':     ['financial', 'fintech', 'banking', 'insurance'],
-    'healthtech':  ['health', 'medical', 'hospital', 'wellness', 'healthtech'],
-    'martech':     ['marketing', 'advertising', 'martech'],
-    'hrtech':      ['human resources', 'staffing', 'hrtech', 'recruiting'],
-    'legaltech':   ['legal', 'law', 'legaltech'],
-    'proptech':    ['real estate', 'proptech'],
-    'cleantech':   ['renewable', 'energy', 'environmental', 'cleantech'],
-    'logistics':   ['logistics', 'transportation', 'supply chain', 'shipping'],
-};
-
-function matchesIndustry(company) {
-    if (!industry) return true;
-    const ind = (company.industry ?? '').toLowerCase();
-    const search = industry.toLowerCase();
-
-    // Direct substring match first
-    if (ind.includes(search)) return true;
-
-    // Check alias expansions
-    const aliases = INDUSTRY_ALIASES[search];
-    if (aliases) return aliases.some(alias => ind.includes(alias));
-
-    return false;
-}
+// ─── State ────────────────────────────────────────────────────────────────────
+const collected = [];
+let   done      = false;
 
 // ─── Hunter.io enrichment ─────────────────────────────────────────────────────
 async function enrichWithHunter(domain) {
@@ -186,77 +111,161 @@ async function enrichWithHunter(domain) {
             emailPattern:  data.pattern ?? null,
             contactsFound: data.emails?.length ?? 0,
         };
-    } catch (err) {
-        log.warning(`Hunter.io failed for ${domain}: ${err.message}`);
+    } catch {
         return {};
     }
 }
 
-// ─── Main loop ────────────────────────────────────────────────────────────────
-const limiter   = pLimit(3);
-const collected = [];
-let   page      = 0;
-const PAGE_SIZE = Math.min(maxResults, 25); // Free tier max is 25/page; paid tier allows 100
+// ─── Crawler ──────────────────────────────────────────────────────────────────
+const crawler = new PlaywrightCrawler({
+    launchContext: {
+        launchOptions: {
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        },
+    },
+    maxConcurrency: 1,
+    requestHandlerTimeoutSecs: 60,
 
-while (collected.length < maxResults) {
-    log.info(`Fetching page ${page}...`);
+    async requestHandler({ page, request, enqueueLinks }) {
+        if (done) return;
 
-    const companies = await searchCompanies({
-        technologySlug, countryCode, minEmployees, maxEmployees,
-        page, limit: PAGE_SIZE,
-    });
+        log.info(`Scraping: ${request.url}`);
 
-    if (companies === null) {
-        log.info('Stopping due to insufficient credits.');
-        break;
-    }
+        // Wait for company rows to load
+        await page.waitForSelector('table tbody tr, [data-testid="company-row"], .company-row', {
+            timeout: 15000,
+        }).catch(() => {
+            log.warning('No company table found — trying generic row selector');
+        });
 
-    if (!companies.length) {
-        log.info('No more results from API.');
-        break;
-    }
+        // Give JS a moment to hydrate
+        await page.waitForTimeout(2000);
 
-    const filtered = companies.filter(matchesIndustry);
-    log.info(`Page ${page}: ${companies.length} from API → ${filtered.length} after industry filter`);
+        // Extract company data from the page
+        // TheirStack renders a table with company info
+        const companies = await page.evaluate(() => {
+            const rows = [];
 
-    const enriched = await Promise.all(
-        filtered.slice(0, maxResults - collected.length).map(company =>
-            limiter(async () => {
-                const domain     = company.domain ?? null;
-                const hunterData = await enrichWithHunter(domain);
-                return {
-                    name:             company.name          ?? null,
-                    domain,
-                    website:          company.url           ?? domain,
-                    linkedin:         company.linkedin_url  ?? null,
-                    country:          company.country       ?? null,
-                    countryCode:      company.country_code  ?? null,
-                    industry:         company.industry      ?? null,
-                    employees:        company.employee_count        ?? null,
-                    employeeRange:    company.employee_count_range  ?? null,
-                    foundedYear:      company.founded_year  ?? null,
-                    technology,
-                    scrapedAt:        new Date().toISOString(),
-                    ...hunterData,
-                };
-            })
-        )
-    );
+            // Try table rows first
+            const tableRows = document.querySelectorAll('table tbody tr');
+            if (tableRows.length > 0) {
+                tableRows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 2) return;
 
-    for (const record of enriched) {
-        if (collected.length >= maxResults) break;
-        collected.push(record);
-        await Actor.pushData(record);
-    }
+                    // Extract text from each cell
+                    const texts = Array.from(cells).map(c => c.innerText.trim());
+                    const links = Array.from(row.querySelectorAll('a'));
+                    const companyLink = links.find(a => a.href && a.href.includes('/company/'));
 
-    log.info(`Progress: ${collected.length} / ${maxResults} collected`);
+                    rows.push({
+                        name:      cells[0]?.innerText?.trim() ?? null,
+                        domain:    companyLink?.href?.split('/company/')?.[1]?.split('?')[0] ?? null,
+                        country:   texts[1] ?? null,
+                        industry:  texts[2] ?? null,
+                        employees: texts[3] ?? null,
+                        rawCells:  texts,
+                    });
+                });
+                return rows;
+            }
 
-    if (companies.length < PAGE_SIZE) {
-        log.info('Last page reached.');
-        break;
-    }
-    page++;
-}
+            // Fallback: look for any repeated card-like structure
+            const cards = document.querySelectorAll('[class*="company"], [class*="Company"]');
+            cards.forEach(card => {
+                const nameEl = card.querySelector('h2, h3, [class*="name"], [class*="Name"]');
+                const domainEl = card.querySelector('a[href*="http"]');
+                rows.push({
+                    name:      nameEl?.innerText?.trim() ?? null,
+                    domain:    domainEl?.href ?? null,
+                    country:   null,
+                    industry:  null,
+                    employees: null,
+                });
+            });
 
-log.info(`✅ Done. Saved ${collected.length} companies to dataset.`);
+            return rows;
+        });
+
+        log.info(`Found ${companies.length} companies on page`);
+
+        // If we got nothing, dump the page HTML for debugging
+        if (companies.length === 0) {
+            const snippet = await page.evaluate(() => document.body.innerText.slice(0, 2000));
+            log.warning('No companies parsed. Page text snippet:\n' + snippet);
+        }
+
+        // Filter and collect
+        for (const company of companies) {
+            if (done || collected.length >= maxResults) { done = true; break; }
+
+            if (!matchesIndustry(company.industry, industry)) continue;
+            if (!matchesSize(company.employees?.replace(/[^0-9]/g, ''), companySize)) continue;
+
+            const hunterData = await enrichWithHunter(company.domain);
+            const record = {
+                name:        company.name,
+                domain:      company.domain,
+                country:     company.country,
+                industry:    company.industry,
+                employees:   company.employees,
+                technology,
+                scrapedAt:   new Date().toISOString(),
+                sourceUrl:   request.url,
+                ...hunterData,
+            };
+
+            collected.push(record);
+            await Actor.pushData(record);
+            log.info(`[${collected.length}/${maxResults}] ${record.name} — ${record.industry} — ${record.employees}`);
+        }
+
+        if (done || collected.length >= maxResults) {
+            done = true;
+            return;
+        }
+
+        // Find and enqueue the "next page" link
+        const nextUrl = await page.evaluate(() => {
+            // Look for pagination: ?page=N pattern or a "next" button
+            const links = Array.from(document.querySelectorAll('a[href]'));
+            const nextLink = links.find(a =>
+                a.getAttribute('aria-label')?.toLowerCase().includes('next') ||
+                a.innerText?.toLowerCase().trim() === 'next' ||
+                a.innerText?.includes('→') ||
+                a.querySelector('[aria-label*="next"]')
+            );
+            return nextLink?.href ?? null;
+        });
+
+        if (nextUrl && nextUrl !== request.url) {
+            log.info(`Next page: ${nextUrl}`);
+            await enqueueLinks({ urls: [nextUrl] });
+        } else {
+            // Try constructing next page URL manually (?page=N)
+            const url = new URL(request.url);
+            const currentPage = parseInt(url.searchParams.get('page') || '1');
+            const nextPage = currentPage + 1;
+            url.searchParams.set('page', nextPage);
+            const constructedNext = url.toString();
+
+            // Only enqueue if we got a full page (10 results = more pages likely)
+            if (companies.length >= 10) {
+                log.info(`Trying constructed next page: ${constructedNext}`);
+                await enqueueLinks({ urls: [constructedNext] });
+            } else {
+                log.info('Last page reached (fewer than 10 results).');
+            }
+        }
+    },
+
+    failedRequestHandler({ request, error }) {
+        log.error(`Failed: ${request.url} — ${error.message}`);
+    },
+});
+
+await crawler.run([baseUrl]);
+
+log.info(`✅ Done. Saved ${collected.length} companies.`);
 await Actor.exit();
